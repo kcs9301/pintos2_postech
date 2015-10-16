@@ -32,7 +32,7 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
-//printf ("%s\n",file_name);
+  printf ("argv : %s\n",file_name);
 
 
   /* Make a copy of FILE_NAME.
@@ -45,6 +45,8 @@ process_execute (const char *file_name)
 char *argument_set;
 char *real_file_name = strtok_r (file_name, " ", &argument_set);
 
+  printf ("fn_copy : %s\n",fn_copy);
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (real_file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
@@ -55,15 +57,19 @@ char *real_file_name = strtok_r (file_name, " ", &argument_set);
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *file_name)
 {
-  char *file_name = file_name_;
+  char *file_name_;
   struct intr_frame if_;
   bool success;
 
-char *argument_set;
-char *real_file_name = strtok_r (file_name, " ", &argument_set);
+  file_name_ = palloc_get_page (0);
+  if (file_name_ == NULL)
+    return false;
+  strlcpy (file_name_, file_name, PGSIZE);
 
+char *argument_set;
+char *real_file_name = strtok_r (file_name_, " ", &argument_set);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -77,13 +83,15 @@ char *real_file_name = strtok_r (file_name, " ", &argument_set);
 
   printf ("eip : %x \n esp : %x \n", a,b);
 
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
   if (success)
     setting_user_stack (&file_name, &if_.esp);
 
+  /* If load failed, quit. */
+  palloc_free_page (file_name);
+  palloc_free_page (file_name_);
+  if (!success) 
+    thread_exit ();
+  
   b = if_.esp;
 
   printf ("eip : %x \n esp : %x \n", a,b);
@@ -103,35 +111,37 @@ static bool
 setting_user_stack (char **file_name_, void **esp_)
 {
   void *esp = *esp_;
-  char *file_name = &file_name_;
+  char *file_name = *file_name_;
   char *tok;
   char *save_pnt;
-  tok = strtok_r (file_name, " ", &save_pnt);
+
+    printf ("file_name : %s\n",file_name);
 
   int argc=0;
 
   printf ("%x\n", PHYS_BASE);
   printf ("%x\n", esp);
 
-  while (tok != NULL){
+  for (tok = strtok_r (file_name, " ", &save_pnt); tok != NULL; 
+    tok = strtok_r (NULL, " ", &save_pnt)){
     size_t length = strlen (tok) + 1;
     if(PHYS_BASE - esp + length > 4096)
       return false;
     esp = esp - length;
     strlcpy ((char *)esp, tok, length);
-
+/*
   char *ch_esp = (char *) esp;
   ch_esp -= 1;
-  *ch_esp = argc;
+  *ch_esp = '\0';
   esp = (void *) ch_esp;
-
+*/
     printf ("length check : %d\n", length);
+    printf ("address check : %x\n", esp);
 
-    tok = strtok_r (NULL, " ", &save_pnt);
     argc++;
   }
 
-  char *find_addr = (char *) esp; // for argv pointer
+  char *find_addr = (char *) esp;       // for argv pointer
   
   printf ("argc check : %d\n", argc);
 
@@ -164,22 +174,29 @@ setting_user_stack (char **file_name_, void **esp_)
 /* push argv address */
 
   int count = 0;
+  /*
   while (count < argc){
     while ( *(find_addr) != '\0' ){
       find_addr += 1;
     }
+    find_addr += 1;
     count++;
   }
   count =0;
-
+  find_addr -= 1;
+*/
   do {
     char **char_esp = (char **) esp;
     char_esp -= 1;
     *char_esp = find_addr;
     esp = (void *) char_esp;
 
+  int *addr = (char *)find_addr ; // for debugging
+    printf ("address : %x \n", addr);
+
     while ( *(find_addr) != '\0')
-      find_addr -= 1;
+      find_addr += 1;
+    find_addr += 1;
     count++;
   }while (count < argc);
 
@@ -187,6 +204,14 @@ setting_user_stack (char **file_name_, void **esp_)
 
   printf ("check esp after push argv point : %x\n", esp);
   printf ("check the value : \n");
+
+  /* Push argv */
+  char ***argv_esp = (char ***) esp;
+  argv_esp -= 1;
+  *argv_esp = argv_esp + 1;
+  esp = (void *) argv_esp;
+
+  printf ("check **argv : %x\n", *argv_esp);
 
   /* Push argc */
   int *int_esp = (int *) esp;
