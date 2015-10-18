@@ -32,7 +32,7 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
-  printf ("argv : %s\n",file_name);
+//  printf ("argv : %s\n",file_name);
 
 
   /* Make a copy of FILE_NAME.
@@ -45,7 +45,7 @@ process_execute (const char *file_name)
 char *argument_set;
 char *real_file_name = strtok_r (file_name, " ", &argument_set);
 
-  printf ("fn_copy : %s\n",fn_copy);
+//  printf ("fn_copy : %s\n",fn_copy);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (real_file_name, PRI_DEFAULT, start_process, fn_copy);
@@ -76,12 +76,14 @@ char *real_file_name = strtok_r (file_name_, " ", &argument_set);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+  lock_acquire (&filesys_lock);
   success = load (real_file_name, &if_.eip, &if_.esp);
+  lock_release (&filesys_lock);
 
   int a = if_.eip;
   int b = if_.esp;
 
-  printf ("eip : %x \n esp : %x \n", a,b);
+//  printf ("eip : %x \n esp : %x \n", a,b);
 
   if (success)
     setting_user_stack (&file_name, &if_.esp);
@@ -94,7 +96,7 @@ char *real_file_name = strtok_r (file_name_, " ", &argument_set);
   
   b = if_.esp;
 
-  printf ("eip : %x \n esp : %x \n", a,b);
+//  printf ("eip : %x \n esp : %x \n", a,b);
 
 
   /* Start the user process by simulating a return from an
@@ -115,12 +117,12 @@ setting_user_stack (char **file_name_, void **esp_)
   char *tok;
   char *save_pnt;
 
-    printf ("file_name : %s\n",file_name);
+//    printf ("file_name : %s\n",file_name);
 
   int argc=0;
 
-  printf ("%x\n", PHYS_BASE);
-  printf ("%x\n", esp);
+//  printf ("%x\n", PHYS_BASE);
+//  printf ("%x\n", esp);
 
   for (tok = strtok_r (file_name, " ", &save_pnt); tok != NULL; 
     tok = strtok_r (NULL, " ", &save_pnt)){
@@ -135,17 +137,17 @@ setting_user_stack (char **file_name_, void **esp_)
   *ch_esp = '\0';
   esp = (void *) ch_esp;
 */
-    printf ("length check : %d\n", length);
-    printf ("address check : %x\n", esp);
+//    printf ("length check : %d\n", length);
+//    printf ("address check : %x\n", esp);
 
     argc++;
   }
 
   char *find_addr = (char *) esp;       // for argv pointer
   
-  printf ("argc check : %d\n", argc);
+//  printf ("argc check : %d\n", argc);
 
-  printf ("check esp after argv[] : %x\n", esp);
+//  printf ("check esp after argv[] : %x\n", esp);
 
    /* Push null sentinel. */
   uint8_t *uint8_esp = (uint8_t*) esp;
@@ -153,14 +155,14 @@ setting_user_stack (char **file_name_, void **esp_)
   *uint8_esp = 0;
   esp = (void*) uint8_esp;
 
-  printf ("check esp after null point : %x\n", esp);
+//  printf ("check esp after null point : %x\n", esp);
 
 
 // 4 size arrange
   esp = esp - 1;
   esp = (void*) ( (intptr_t) esp + (((intptr_t) esp) %4) );  
 
-  printf ("check esp after arrange : %x\n", esp);
+//  printf ("check esp after arrange : %x\n", esp);
 
 
 /* argv[argc] = NULL */
@@ -169,7 +171,7 @@ setting_user_stack (char **file_name_, void **esp_)
   *nul_esp = 0;
   esp = (void *) nul_esp;
 
-  printf ("check esp after argv[argc] : %x\n", esp);
+//  printf ("check esp after argv[argc] : %x\n", esp);
 
 /* push argv address */
 
@@ -192,7 +194,7 @@ setting_user_stack (char **file_name_, void **esp_)
     esp = (void *) char_esp;
 
   int *addr = (char *)find_addr ; // for debugging
-    printf ("address : %x \n", addr);
+//    printf ("address : %x \n", addr);
 
     while ( *(find_addr) != '\0')
       find_addr += 1;
@@ -200,10 +202,10 @@ setting_user_stack (char **file_name_, void **esp_)
     count++;
   }while (count < argc);
 
-  printf ("check find_addr : %x\n", find_addr);
+//  printf ("check find_addr : %x\n", find_addr);
 
-  printf ("check esp after push argv point : %x\n", esp);
-  printf ("check the value : \n");
+//  printf ("check esp after push argv point : %x\n", esp);
+//  printf ("check the value : \n");
 
   /* Push argv */
   char ***argv_esp = (char ***) esp;
@@ -211,7 +213,7 @@ setting_user_stack (char **file_name_, void **esp_)
   *argv_esp = argv_esp + 1;
   esp = (void *) argv_esp;
 
-  printf ("check **argv : %x\n", *argv_esp);
+//  printf ("check **argv : %x\n", *argv_esp);
 
   /* Push argc */
   int *int_esp = (int *) esp;
@@ -219,7 +221,7 @@ setting_user_stack (char **file_name_, void **esp_)
   *int_esp = argc;
   esp = (void *) int_esp;  
 
-  printf ("check esp after argc : %x\n", esp);
+//  printf ("check esp after argc : %x\n", esp);
 
 /* push return address */
   void **vod_esp = (void **) esp;

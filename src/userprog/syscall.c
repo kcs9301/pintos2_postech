@@ -5,6 +5,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
+#include "filesys/filesys.h"
 //#include "userprog/pagedir.c"
 
 static void syscall_handler (struct intr_frame *);
@@ -12,13 +13,11 @@ static bool check_valid_pointer (void *);
 static void exit (int ); // 1
 static int write (int, const void *, unsigned); // 9
 
-static struct lock filesys_lock;
 
 void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  lock_init (&filesys_lock);
 
 }
 
@@ -50,9 +49,9 @@ syscall_handler (struct intr_frame *f )
 			esp += 4;
 			unsigned size = * (unsigned *) esp;
 			esp -= 12;
-			lock_acquire (&filesys_lock);
+//			lock_acquire (&filesys_lock);
 			write (fd, buffer, size);
-			lock_release (&filesys_lock);
+//			lock_release (&filesys_lock);
 		}
 	}
 	return;
