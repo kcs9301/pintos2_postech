@@ -98,6 +98,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+ 
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -184,6 +185,7 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+
   /* Prepare thread for first run by initializing its stack.
      Do this atomically so intermediate values for the 'stack' 
      member cannot be observed. */
@@ -205,6 +207,10 @@ thread_create (const char *name, int priority,
   sf->ebp = 0;
 
   intr_set_level (old_level);
+
+  t->myprocess = init_my_process (t, tid, t->pagedir);
+
+  list_push_back (&thread_current ()->child_list, &t->myprocess->child_elem);
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -290,6 +296,11 @@ thread_exit (void)
 {
   ASSERT (!intr_context ());
 
+  struct thread *cur = thread_current ();
+
+  printf ("%s: exit(%d)\n", cur->name, cur->myprocess->status);
+
+
 #ifdef USERPROG
   process_exit ();
 #endif
@@ -302,6 +313,21 @@ thread_exit (void)
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
+}
+
+void
+thread_exit_only (struct thread *t)
+{
+  ASSERT (!intr_context ());
+
+  printf ("%s: exit(%d)\n", t->name, t->myprocess->status);
+
+  intr_disable ();
+  list_remove (&t->allelem);
+  t->status = THREAD_DYING;
+  schedule ();
+  NOT_REACHED (); 
+
 }
 
 /* Yields the CPU.  The current thread is not put to sleep and
@@ -470,6 +496,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
+  t->load_complete = false;
+  t->load_success = false;
+
+  list_init (&t->child_list);
+
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -585,3 +616,30 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+
+bool
+get_load_complete (tid_t tid)
+{
+  struct list_elem *e;
+  bool find = false;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid){
+        find = true;
+
+        while (!t->load_complete)
+          barrier ();
+        
+        if (t->load_success)
+          return true;
+        else
+          return false;
+      }
+    }
+    if (!find)  // when the thread exits already because of load failure
+      return false;
+}

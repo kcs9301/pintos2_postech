@@ -62,6 +62,7 @@ start_process (void *file_name)
   char *file_name_;
   struct intr_frame if_;
   bool success;
+  bool user_stack;
 
   file_name_ = palloc_get_page (0);
   if (file_name_ == NULL)
@@ -86,18 +87,25 @@ char *real_file_name = strtok_r (file_name_, " ", &argument_set);
 //  printf ("eip : %x \n esp : %x \n", a,b);
 
   if (success)
-    setting_user_stack (&file_name, &if_.esp);
+    user_stack = setting_user_stack (&file_name, &if_.esp);
+
+  thread_current () -> load_complete = true;
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   palloc_free_page (file_name_);
+
+  if (!user_stack)
+    thread_exit ();
+
   if (!success) 
     thread_exit ();
   
   b = if_.esp;
 
-//  printf ("eip : %x \n esp : %x \n", a,b);
+  thread_current () -> load_success = true;
 
+//  printf ("eip : %x \n esp : %x \n", a,b);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -235,6 +243,27 @@ setting_user_stack (char **file_name_, void **esp_)
   
 }
 
+/* allocate process space and return it for child
+  So, actually a thread process space belongs to the parent
+*/
+
+struct process *
+init_my_process (struct thread *t, tid_t tid, uint32_t *pd)
+{
+  struct process *p = malloc (sizeof (struct process));
+
+  p->pid = tid;
+  p->status = -1;
+  p->pagedir = pd;
+  p->im_exit = false;
+  sema_init (&p->sema_wait, 0);
+  p->mythread = t;
+  p->my_parent_die = false;
+
+  return p;
+
+}
+
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
@@ -245,14 +274,61 @@ setting_user_stack (char **file_name_, void **esp_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid ) 
 {
-  do{
+  struct thread *cur = thread_current ();
+  struct process *p;
+  struct list_elem *e;
+  bool find=false;
+  int status;
+  uint32_t *pd;
 
-  }while(1);
+  for (e = list_begin (&cur->child_list); e != list_end (&cur->child_list);
+    e = list_next (e))
+  {
+    p = list_entry (e, struct process, child_elem);
+    if (p->pid == child_tid){
+      find = true;
+      break;
+    }
+  }
 
-  return -1;
+  if (!find)
+    return -1;
+  else {
+    status = get_status (p);  // get status from child exit
+    process_exit_only (p); // release resource of child & remove list
+    return status;
+  }
+
 }
+
+int
+get_status (struct process *p)
+{
+  while (!p->im_exit)
+    barrier ();
+
+  ASSERT (p->im_exit);
+
+  return p->status;
+}
+
+void
+process_exit_only (struct process *p)
+{
+  uint32_t pd = p->pagedir;
+
+  list_remove (&p->child_elem);
+  
+  if (pd != NULL) 
+    {
+      p->pagedir = NULL;
+      pagedir_activate (NULL);
+      pagedir_destroy (pd);
+    }
+}
+
 
 /* Free the current process's resources. */
 void
@@ -260,6 +336,8 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  list_remove (&cur->myprocess->child_elem);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
