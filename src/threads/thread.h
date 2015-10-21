@@ -100,8 +100,7 @@ struct thread
 
     struct process *myprocess;  // my process
     struct list child_list;   // my child list
-    bool load_complete;
-    bool load_success;
+    
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */

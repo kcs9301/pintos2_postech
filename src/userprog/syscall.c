@@ -10,8 +10,8 @@
 //#include "userprog/pagedir.c"
 
 static void syscall_handler (struct intr_frame *);
-static bool check_valid_pointer (void *);
-static void exit (int ); // 1
+void check_valid_pointer (void *);
+void exit (int ); // 1
 static int write (int, const void *, unsigned); // 9
 
 
@@ -29,33 +29,40 @@ syscall_handler (struct intr_frame *f )
 
 	void *esp = f->esp;
 
-	if (!check_valid_pointer (esp)){
-		f->vec_no = 14;
-		intr_handler (f);
-	}
+	check_valid_pointer ((const void *) f->esp);
 
-	int syscall_number = *(int *) esp;
+	int *esp_i = (int *) esp;
+
+	int syscall_number = *(int *) esp_i;
 
 //	printf ("system call number : %d \n", syscall_number);
 
 	switch (syscall_number){
+
+		case 0 : {
+			shutdown_power_off();
+		}
+
 		case 1 : {
 			esp += 4;
 			int status = * (int *) esp;
 			esp -= 4;
 			exit (status);
+			break;
 		}
 		case 2 : {
 			esp += 4;
 			char *cmd_line = * (char **) esp;
 			esp -= 4;
 			f-> eax = exec (cmd_line);
+			break;
 		}
 		case 3 : {
 			esp += 4;
 			tid_t pid = * (tid_t *) esp;
 			esp -= 4;
 			f-> eax = wait (pid);
+			break;
 		}
 		case 9 : {
 			esp += 4;
@@ -68,42 +75,35 @@ syscall_handler (struct intr_frame *f )
 //			lock_acquire (&filesys_lock);
 			f->eax = write (fd, buffer, size);
 //			lock_release (&filesys_lock);
+			break;
 		}
 	}
+	//exit (-1)
 	return;
-
 }
 
-static bool
-check_valid_pointer (void *esp)
+void check_valid_pointer (void *esp)
 {
-	int *esp_i = (int *) esp;
-
-	if (esp == NULL){
-		printf ("esp is NULL pointer\n");
-		return false;
+	if ( !is_user_vaddr (esp) || esp < 0 || esp == NULL )
+	{
+		barrier ();
+		exit (-1);
 	}
-	if (!is_user_vaddr (*esp_i)){
-		printf ("esp is kernel area\n");
-		return false;
-	}
-	if (esp < 0){
-		printf ("esp is negative value\n");
-		return false;
-	}
-	if (*esp_i == 0){
-		printf (" *esp is 0\n");
-		return false;
-	}
-	return true;
 }
 
-static void exit (int status){ // 1
+
+void exit (int status)
+{ // 1
 	struct thread *cur = thread_current ();
 	struct list_elem *e;
 
 	cur->myprocess->status = status;
 	cur->myprocess->im_exit = true;
+
+	if (status <-1 ){
+		cur->myprocess->status = -1;
+		thread_exit ();
+	}
 
 	if (list_empty (&cur->child_list)){
 		if (cur->myprocess->my_parent_die)
@@ -132,7 +132,13 @@ static void exit (int status){ // 1
 tid_t 
 exec (const char *cmd_line)	//2
 {
-	tid_t pid = process_execute (cmd_line);
+	if (!is_user_vaddr (cmd_line))
+		exit (-1);
+
+	char *fn_copy = palloc_get_page (0);
+	strlcpy (fn_copy, cmd_line, PGSIZE);
+
+	tid_t pid = process_execute (fn_copy);
 
 	if (pid == -1)
 		return -1;

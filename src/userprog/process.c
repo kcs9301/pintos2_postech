@@ -89,21 +89,21 @@ char *real_file_name = strtok_r (file_name_, " ", &argument_set);
   if (success)
     user_stack = setting_user_stack (&file_name, &if_.esp);
 
-  thread_current () -> load_complete = true;
+  thread_current () -> myprocess->load_complete = true;
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   palloc_free_page (file_name_);
 
   if (!user_stack)
-    thread_exit ();
+    thread_exit_only (thread_current ());
 
   if (!success) 
-    thread_exit ();
+    thread_exit_only (thread_current ());
   
   b = if_.esp;
 
-  thread_current () -> load_success = true;
+  thread_current () -> myprocess -> load_success = true;
 
 //  printf ("eip : %x \n esp : %x \n", a,b);
 
@@ -259,6 +259,8 @@ init_my_process (struct thread *t, tid_t tid, uint32_t *pd)
   sema_init (&p->sema_wait, 0);
   p->mythread = t;
   p->my_parent_die = false;
+  p->load_success = false;
+  p->load_complete = false;
 
   return p;
 

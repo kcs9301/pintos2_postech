@@ -496,8 +496,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
-  t->load_complete = false;
-  t->load_success = false;
+
 
   list_init (&t->child_list);
 
@@ -623,6 +622,7 @@ get_load_complete (tid_t tid)
 {
   struct list_elem *e;
   bool find = false;
+  struct process *p;
 
   for (e = list_begin (&all_list); e != list_end (&all_list);
        e = list_next (e))
@@ -631,15 +631,22 @@ get_load_complete (tid_t tid)
       if (t->tid == tid){
         find = true;
 
-        while (!t->load_complete)
+        p = t->myprocess;
+
+        while (!p->load_complete)
           barrier ();
         
-        if (t->load_success)
+        if (p->load_success)
           return true;
-        else
+        else{
+          process_exit_only (p);
           return false;
+        }
       }
     }
     if (!find)  // when the thread exits already because of load failure
+    {
+      process_exit_only (p);
       return false;
+    }
 }

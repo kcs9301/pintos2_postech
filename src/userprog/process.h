@@ -27,6 +27,8 @@ struct process
 
 	bool my_parent_die;
 
+	bool load_complete;
+    bool load_success;
 };
 
 #endif /* userprog/process.h */
