@@ -10,7 +10,7 @@
 //#include "userprog/pagedir.c"
 
 static void syscall_handler (struct intr_frame *);
-void check_valid_pointer (void *);
+void check_valid_stack_pointer (const void *);
 void exit (int ); // 1
 static int write (int, const void *, unsigned); // 9
 
@@ -29,7 +29,7 @@ syscall_handler (struct intr_frame *f )
 
 	void *esp = f->esp;
 
-	check_valid_pointer ((const void *) f->esp);
+	check_valid_stack_pointer ((const void *) f->esp);
 
 	int *esp_i = (int *) esp;
 
@@ -82,11 +82,11 @@ syscall_handler (struct intr_frame *f )
 	return;
 }
 
-void check_valid_pointer (void *esp)
+void check_valid_stack_pointer (const void *esp)
 {
-	if ( !is_user_vaddr (esp) || esp < 0 || esp == NULL )
+	if ( !is_user_vaddr (esp) || esp < 0 || esp == NULL || esp < 0x08048000)
 	{
-		barrier ();
+		//barrier ();
 		exit (-1);
 	}
 }
