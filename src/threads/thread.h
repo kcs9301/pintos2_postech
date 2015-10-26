@@ -100,7 +100,8 @@ struct thread
 
     struct process *myprocess;  // my process
     struct list child_list;   // my child list
-    
+
+    struct list open_file_list;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */

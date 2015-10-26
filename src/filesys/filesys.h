@@ -14,6 +14,18 @@ struct block *fs_device;
 
 struct lock filesys_lock;
 
+struct list file_all_list;
+
+struct file_d_elem
+{
+	int fd;
+	char *name;
+	struct file *file;
+
+	struct list_elem file_elem;
+	struct list_elem thread_elem;
+};
+
 void filesys_init (bool format);
 void filesys_done (void);
 bool filesys_create (const char *name, off_t initial_size);
