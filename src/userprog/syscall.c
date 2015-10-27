@@ -277,13 +277,16 @@ remove (const char *file) //5
 	lock_acquire (&filesys_lock);
 	succ = filesys_remove (file);
 	lock_release (&filesys_lock);
-
+/*
 	if (succ)
 	{
 		struct file_d_elem *d = find_file (file);
 		list_remove (d);
 		free (d);
 	}
+*/
+	return succ;
+
 }
 
 int
@@ -371,10 +374,18 @@ write (int fd, const void *buffer, unsigned size){ // add more
 	if (d==NULL)
 		return -1;
 	int return_value;
+
 	lock_acquire (&filesys_lock);
 	return_value = file_write (d->file, buffer, size);
 	lock_release (&filesys_lock);
+	check (return_value);
 	return return_value;
+}
+
+void
+check (int returnv)
+{
+	int retu = returnv;
 }
 
 void
