@@ -9,10 +9,13 @@
 #include "filesys/filesys.h"
 //#include "userprog/pagedir.c"
 
+
 struct file_d_elem * find_file (char *);
+struct file_d_elem *search_file (int , struct thread *);
 
 static void syscall_handler (struct intr_frame *);
 void check_valid_stack_pointer (const void *);
+
 void exit (int ); // 1
 tid_t exec (const char *);	//2
 int wait (tid_t ); //3
@@ -22,7 +25,9 @@ int open (const char * file); //6
 int filesize (int ); //7
 int read (int fd, void *buffer, unsigned size); //8
 static int write (int, const void *, unsigned); // 9
-void close (int ); //12
+void seek (int, unsigned); //10
+unsigned tell (int); //11
+static void close (int ); //12
 
 
 void
@@ -102,6 +107,25 @@ syscall_handler (struct intr_frame *f )
 			f-> eax = open (file);
 			break;
 		}
+		case 7 : {	//filesize
+			esp += 4;
+			int fd = * (int *) esp;
+			esp -= 4;
+			f-> eax = filesize (fd);
+			break;
+		}
+		case 8 : {	//read
+			esp += 4;
+			int fd = * (int *) esp;
+			esp += 4;
+			void *buffer = * (void **) esp;
+			esp += 4;
+			unsigned size = * (unsigned *) esp;
+			esp -= 12;
+			check_valid_stack_pointer (buffer);
+			f->eax = read (fd, buffer, size);
+			break;
+		}
 		case 9 : {
 			esp += 4;
 			int fd = * (int *) esp;
@@ -116,6 +140,29 @@ syscall_handler (struct intr_frame *f )
 //			lock_release (&filesys_lock);
 			break;
 		}
+		case 10 : {
+			esp += 4;
+			int fd = * (int *) esp;
+			esp += 4;
+			unsigned position = * (unsigned *)esp;
+			esp -= 8;
+			seek (fd, position);
+			break;
+		}
+		case 11 : {
+			esp += 4;
+			int fd = * (int *) esp;
+			esp -= 4;
+			f->eax = tell (fd);
+			break;
+		}
+		case 12 : {
+			esp += 4;
+			int fd = * (int *) esp;
+			esp -= 4;
+			close (fd);
+			break;
+		}
 	}
 	//exit (-1)
 	return;
@@ -123,17 +170,18 @@ syscall_handler (struct intr_frame *f )
 
 void check_valid_stack_pointer (const void *esp)
 {
-	// user address unmapped exit condition
-	void *pointer = pagedir_get_page(thread_current()->pagedir, esp);
-
-	if (pointer == NULL)
-		exit (-1);
 
 	if ( !is_user_vaddr (esp) || esp < 0 || esp == NULL || esp < 0x08048000)
 	{
 		//barrier ();
 		exit (-1);
 	}
+	// user address unmapped exit condition
+	void *pointer = pagedir_get_page(thread_current()->pagedir, esp);
+
+	if (pointer == NULL)
+		exit (-1);
+
 }
 
 
@@ -210,14 +258,14 @@ create (const char *file, unsigned initial_size) //4
 	lock_acquire (&filesys_lock);
 	succ = filesys_create (file, initial_size);
 	lock_release (&filesys_lock);
-
+/*
 	if (succ)
 	{
 		struct file_d_elem *d = malloc (sizeof (struct file_d_elem));
 		d->name = file;
 		list_push_back (&file_all_list, &d->file_elem);
 	}
-
+*/
 	return succ;
 }
 
@@ -251,13 +299,17 @@ open (const char *file) //6
 	if (f == NULL)
 		return -1;
 
-	struct file_d_elem *reference = find_file (file);
-	ASSERT (reference!=NULL);
+	//struct file_d_elem *reference = find_file (file);
+	//ASSERT (reference!=NULL);
+	//if (reference == NULL)
+	//	return -1;
+	// Some files could exist before the program starts.
+
 	struct file_d_elem *d = malloc (sizeof (struct file_d_elem));
 	ASSERT (d!=NULL);
 	struct thread *t = thread_current ();
 
-	d->name = reference->name;
+	d->name = file;
 	d->file = f;
 
 	int fd = malloc (sizeof (int));
@@ -269,27 +321,112 @@ open (const char *file) //6
 	return fd;
 }
 
+int 
+filesize (int fd) //7
+{
+	if (fd < 2)
+		return -1;
+
+	struct thread *t = thread_current ();
+	struct file_d_elem *d = search_file (fd, t);
+	if (d==NULL)
+		return -1;
+	
+	int return_value;
+	lock_acquire (&filesys_lock);
+	return_value = file_length (d->file);
+	lock_release (&filesys_lock);
+	return return_value;
+}
+
+int
+read (int fd, void *buffer, unsigned size)	//8
+{
+	if (fd == 0)
+		return input_getc();
+	else if (fd == 1)
+		return -1;
+
+	struct thread *t = thread_current ();
+	struct file_d_elem *d = search_file (fd, t);
+	if (d==NULL)
+		return -1;
+	int return_value;
+	lock_acquire (&filesys_lock);
+	return_value = file_read (d->file, buffer, size);
+	lock_release (&filesys_lock);
+	return return_value;
+
+}
+
 static int // 9
 write (int fd, const void *buffer, unsigned size){ // add more
 	if (fd == 1)
 		putbuf (buffer, size);
-	return size;
+	else if (fd == 0)
+		return -1;
+
+	struct thread *t = thread_current ();
+	struct file_d_elem *d = search_file (fd, t);
+	if (d==NULL)
+		return -1;
+	int return_value;
+	lock_acquire (&filesys_lock);
+	return_value = file_write (d->file, buffer, size);
+	lock_release (&filesys_lock);
+	return return_value;
 }
 
-int 
-filesize (int fd)
+void
+seek (int fd, unsigned position)	//10
+{
+	// No more detail in Project2
+
+	struct thread *t = thread_current ();
+	struct file_d_elem *d = search_file (fd, t);
+	if (d==NULL)
+		return -1;
+	lock_acquire (&filesys_lock);
+	file_seek (d->file, position);
+	lock_release (&filesys_lock);
+}
+
+unsigned
+tell (int fd)	//11
 {
 	struct thread *t = thread_current ();
 	struct file_d_elem *d = search_file (fd, t);
 	if (d==NULL)
 		return -1;
-	else
-		return file_length (d->file);
-
+	int return_value;
+	lock_acquire (&filesys_lock);
+	return_value = file_tell (d->file);
+	lock_release (&filesys_lock);
+	return return_value;
 }
 
+void
+close (int fd)	//12
+{
+	struct thread *t = thread_current ();
+	struct file_d_elem *d = search_file (fd, t);
+	
+	if (d == NULL)
+		return -1;
+
+//	list_remove (&d->file_elem);
+	list_remove (&d->thread_elem);
+
+	lock_acquire (&filesys_lock);
+	file_close (d->file);
+	lock_release (&filesys_lock);
+
+	free (d);
+}
+
+// USELESS
 struct file_d_elem *
-find_file (char *file)
+find_file (char *file)	// among the all file list in process kernel
 {
 	struct list_elem *e;
 	for (e=list_begin (&file_all_list); e!=list_end (&file_all_list);
@@ -299,10 +436,11 @@ find_file (char *file)
 		if (d->name == file)
 			return d;
 	}
+//	return NULL;
 }
 
 struct file_d_elem *
-search_file (int fd, struct thread *t)
+search_file (int fd, struct thread *t)	// among the thread 
 {
 	struct list_elem *e;
 	for (e=list_begin (&t->open_file_list); e!=list_end (&t->open_file_list);
