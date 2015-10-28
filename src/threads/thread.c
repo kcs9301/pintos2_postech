@@ -325,6 +325,7 @@ thread_exit_only (struct thread *t)
   intr_disable ();
   list_remove (&t->allelem);
   t->status = THREAD_DYING;
+  sema_up (&t->myprocess->sema_wait); // This is Critical!!!!!
   schedule ();
   NOT_REACHED (); 
 

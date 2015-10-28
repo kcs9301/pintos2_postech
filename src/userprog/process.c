@@ -308,8 +308,7 @@ process_wait (tid_t child_tid )
 int
 get_status (struct process *p)
 {
-  while (!p->im_exit)
-    barrier ();
+  sema_down (&p->sema_wait);
 
   ASSERT (p->im_exit);
 

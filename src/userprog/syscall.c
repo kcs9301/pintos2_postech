@@ -193,16 +193,16 @@ void exit (int status)
 	cur->myprocess->status = status;
 	cur->myprocess->im_exit = true;
 
-	if (status <-1 ){
+	if (status <-1 )
 		cur->myprocess->status = -1;
-		thread_exit ();
-	}
 
 	if (list_empty (&cur->child_list)){
 		if (cur->myprocess->my_parent_die)
 			thread_exit ();
-		else
+		else{
 			thread_exit_only (cur); // it will become thread_exit_only
+//			sema_up (&cur->myprocess->sema_wait);
+		}
 	}
 	else {
 		if (cur->myprocess->my_parent_die)
@@ -218,6 +218,7 @@ void exit (int status)
    	 				p->my_parent_die = true;
   				}
   				thread_exit_only (cur);
+ // 				sema_up (&cur->myprocess->sema_wait);
 			}
 	}
 }
