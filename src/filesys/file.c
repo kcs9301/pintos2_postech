@@ -51,6 +51,7 @@ file_close (struct file *file)
       inode_close (file->inode);
       free (file); 
     }
+    file = NULL;
 }
 
 /* Returns the inode encapsulated by FILE. */
@@ -94,6 +95,9 @@ file_read_at (struct file *file, void *buffer, off_t size, off_t file_ofs)
 off_t
 file_write (struct file *file, const void *buffer, off_t size) 
 {
+  if (file->deny_write)
+    return 0;
+
   off_t bytes_written = inode_write_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_written;
   return bytes_written;

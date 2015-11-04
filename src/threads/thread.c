@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "filesys/filesys.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -70,6 +71,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+
+void all_file_close (struct thread *);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -300,6 +303,9 @@ thread_exit (void)
 
   printf ("%s: exit(%d)\n", cur->name, cur->myprocess->status);
 
+  file_close (cur->me);
+
+  all_file_close (cur);
 
 #ifdef USERPROG
   process_exit ();
@@ -321,6 +327,10 @@ thread_exit_only (struct thread *t)
   ASSERT (!intr_context ());
 
   printf ("%s: exit(%d)\n", t->name, t->myprocess->status);
+
+  file_close (t->me);
+
+  all_file_close (t);
 
   intr_disable ();
   list_remove (&t->allelem);
@@ -651,4 +661,38 @@ get_load_complete (tid_t tid)
       process_exit_only (p);
       return false;
     }
+}
+
+void
+all_file_close (struct thread *t)
+{
+  lock_acquire (&filesys_lock);
+  struct list_elem *e;
+  for (e=list_begin (&t->open_file_list); e!=list_end (&t->open_file_list);
+    e = list_next (e))
+  {
+    struct file_d_elem *d = list_entry (e, struct file_d_elem, thread_elem);
+    check_remove_same_file (t, d, e);
+//    printf ("%x\n", &d->file);
+    file_close (d->file);
+    list_remove (&d->thread_elem);
+//    free (d);
+//   break;
+  }
+  lock_release (&filesys_lock);
+}
+
+void
+check_remove_same_file (struct thread *t, struct file_d_elem *d_r, struct list_elem *e_r)
+{
+  struct list_elem *e;
+  for (e = list_next (e_r); e!=list_end (&t->open_file_list);
+    e = list_next (e)) 
+  {
+    struct file_d_elem *d = list_entry (e, struct file_d_elem, thread_elem);
+    if (d_r->name == d->name){
+      list_remove (&d->thread_elem);
+  //    free (d);
+    }
+  }
 }

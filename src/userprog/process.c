@@ -23,6 +23,7 @@ static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool setting_user_stack (char **file_name_, void **esp);
 
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -86,8 +87,10 @@ char *real_file_name = strtok_r (file_name_, " ", &argument_set);
 
 //  printf ("eip : %x \n esp : %x \n", a,b);
 
-  if (success)
+  if (success){
     user_stack = setting_user_stack (&file_name, &if_.esp);
+//    file_deny_write (real_file_name);
+  }
 
   thread_current () -> myprocess->load_complete = true;
 
@@ -321,7 +324,7 @@ process_exit_only (struct process *p)
   uint32_t pd = p->pagedir;
 
   list_remove (&p->child_elem);
-  
+
   if (pd != NULL) 
     {
       p->pagedir = NULL;
@@ -339,7 +342,7 @@ process_exit (void)
   uint32_t *pd;
 
   list_remove (&cur->myprocess->child_elem);
-
+ 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -357,6 +360,8 @@ process_exit (void)
       pagedir_destroy (pd);
     }
 }
+
+
 
 /* Sets up the CPU for running user code in the current
    thread.
@@ -471,6 +476,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
+  t->me = file;
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -554,7 +561,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+ if (success)
+    file_deny_write (file);
   return success;
 }
 
@@ -674,7 +682,7 @@ setup_stack (void **esp)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = palloc_get_page (PAL_USER | PAL_ZERO);  // KPAGE??!!!!!!!!????!?!?!
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
@@ -705,3 +713,5 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+

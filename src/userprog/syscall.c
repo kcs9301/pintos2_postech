@@ -15,6 +15,7 @@ struct file_d_elem *search_file (int , struct thread *);
 
 static void syscall_handler (struct intr_frame *);
 void check_valid_stack_pointer (const void *);
+//void all_file_close (struct thread *);
 
 void exit (int ); // 1
 tid_t exec (const char *);	//2
@@ -28,6 +29,9 @@ static int write (int, const void *, unsigned); // 9
 void seek (int, unsigned); //10
 unsigned tell (int); //11
 static void close (int ); //12
+
+bool
+check_same_file (struct thread *t, char *file);
 
 
 void
@@ -197,26 +201,35 @@ void exit (int status)
 		cur->myprocess->status = -1;
 
 	if (list_empty (&cur->child_list)){
-		if (cur->myprocess->my_parent_die)
+		if (cur->myprocess->my_parent_die){
+//			all_file_close (cur);
 			thread_exit ();
+		}
 		else{
+//			all_file_close (cur);
 			thread_exit_only (cur); // it will become thread_exit_only
 //			sema_up (&cur->myprocess->sema_wait);
 		}
 	}
 	else {
-		if (cur->myprocess->my_parent_die)
+		if (cur->myprocess->my_parent_die){
+//			all_file_close (cur);
 			thread_exit ();
+		}
 		// visit all list entry ,and set the parent die true
 		else {
 			for (e = list_begin (&cur->child_list); e != list_end (&cur->child_list);
 		    e = list_next (e)) {
   			  	struct process *p = list_entry (e, struct process, child_elem);
-  				if (p->im_exit)
+  				if (p->im_exit){
+  //					all_file_close (p->mythread);
   					process_exit_only (p);
+  				}
   				else
+ // 					list_insert (&cur->myprocess->child_elem, &p->child_elem);
    	 				p->my_parent_die = true;
   				}
+//  				all_file_close (cur);
   				thread_exit_only (cur);
  // 				sema_up (&cur->myprocess->sema_wait);
 			}
@@ -238,9 +251,14 @@ exec (const char *cmd_line)	//2
 		return -1;
 
 	if (get_load_complete (pid))
+	{
+		palloc_free_page (fn_copy);
 		return pid;
-	else
+	}
+	else{
+		palloc_free_page (fn_copy);
 		return -1;
+	}
 }
 
 int wait (tid_t pid) //3
@@ -296,8 +314,15 @@ open (const char *file) //6
 	if (file == NULL)
 		return -1;
 
+	struct file_d_elem *d = malloc (sizeof (struct file_d_elem));
+	ASSERT (d!=NULL);
+
+	struct thread *t = thread_current ();
+	struct file *f;
+
+
 	lock_acquire (&filesys_lock);
-	struct file *f = filesys_open (file);
+		f = filesys_open (file);
 	lock_release (&filesys_lock);
 
 	if (f == NULL)
@@ -309,20 +334,18 @@ open (const char *file) //6
 	//	return -1;
 	// Some files could exist before the program starts.
 
-	struct file_d_elem *d = malloc (sizeof (struct file_d_elem));
-	ASSERT (d!=NULL);
-	struct thread *t = thread_current ();
 
 	d->name = file;
 	d->file = f;
 
-	int fd = malloc (sizeof (int));
-	fd = give_fd (t);
+//	int fd = malloc (sizeof (int));
+//	fd = give_fd (t);
 
-	d->fd = fd;
+	d->fd = give_fd (t); //fd;
+
 	list_push_back (&t->open_file_list, &d->thread_elem);
 
-	return fd;
+	return d->fd;
 }
 
 int 
@@ -374,8 +397,8 @@ write (int fd, const void *buffer, unsigned size){ // add more
 	struct file_d_elem *d = search_file (fd, t);
 	if (d==NULL)
 		return -1;
-	int return_value;
 
+	int return_value;
 	lock_acquire (&filesys_lock);
 	return_value = file_write (d->file, buffer, size);
 	lock_release (&filesys_lock);
@@ -486,3 +509,18 @@ give_fd (struct thread *t)
 	}
 	return fd;
 }
+
+bool
+check_same_file (struct thread *t, char *file)
+{
+  struct list_elem *e;
+  for (e=list_begin (&t->open_file_list); e!=list_end (&t->open_file_list);
+    e = list_next (e)) 
+  {
+    struct file_d_elem *d = list_entry (e, struct file_d_elem, thread_elem);
+    if (d->name == file)
+    	return true;
+  }
+  return false;
+}
+
