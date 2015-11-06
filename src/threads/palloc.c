@@ -10,6 +10,7 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/frame.c"
 
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
@@ -59,6 +60,7 @@ palloc_init (size_t user_page_limit)
   init_pool (&kernel_pool, free_start, kernel_pages, "kernel pool");
   init_pool (&user_pool, free_start + kernel_pages * PGSIZE,
              user_pages, "user pool");
+  frame_table_init (user_pages);
 }
 
 /* Obtains and returns a group of PAGE_CNT contiguous free pages.
@@ -76,6 +78,9 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 
   if (page_cnt == 0)
     return NULL;
+
+  if (page_cnt == 1 && (pool == &user_pool))
+    ft_check ();
 
   lock_acquire (&pool->lock);
   page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
@@ -96,6 +101,9 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
       if (flags & PAL_ASSERT)
         PANIC ("palloc_get: out of pages");
     }
+
+    if ((pool == &user_pool))
+      ft_insert (pages);
 
   return pages;
 }
@@ -130,6 +138,11 @@ palloc_free_multiple (void *pages, size_t page_cnt)
     pool = &user_pool;
   else
     NOT_REACHED ();
+
+  if ((pool == &user_pool)){
+    if (!ft_delete (pages))
+      PANIC ("Can not delete a frame table entry");
+  }
 
   page_idx = pg_no (pages) - pg_no (pool->base);
 

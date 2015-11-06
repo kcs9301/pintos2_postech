@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 
+
 /* How to allocate pages. */
 enum palloc_flags
   {
