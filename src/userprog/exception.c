@@ -150,14 +150,14 @@ page_fault (struct intr_frame *f)
     if (write)
       if (user){
         if ( !is_user_vaddr (fault_addr) || fault_addr < 0 || fault_addr == NULL || fault_addr < 0x08048000 || !stack_check (fault_addr, f->esp))
-            exit (-1);
+            sys_exit (-1);
         if (setup_fault_addr (fault_addr))
          pass = true;
      }
        
 
   if (!pass)
-    exit (-1); 
+    sys_exit (-1); 
   if (pass)
     return;
 
