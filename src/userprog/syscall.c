@@ -13,6 +13,8 @@
 struct file_d_elem * find_file (char *);
 struct file_d_elem *search_file (int , struct thread *);
 
+bool has_no_parent (struct process *p);
+
 static void syscall_handler (struct intr_frame *);
 void check_valid_stack_pointer (const void *);
 //void all_file_close (struct thread *);
@@ -188,6 +190,15 @@ void check_valid_stack_pointer (const void *esp)
 
 }
 
+bool
+has_no_parent (struct process *p)
+{
+	struct list_elem *pe = &p->child_elem;
+
+	if (pe->next == NULL && pe->prev == NULL)
+		return true;
+	return false;
+}
 
 void exit (int status)
 { // 1
@@ -206,9 +217,7 @@ void exit (int status)
 			thread_exit ();
 		}
 		else{
-//			all_file_close (cur);
-			thread_exit_only (cur); // it will become thread_exit_only
-//			sema_up (&cur->myprocess->sema_wait);
+			thread_exit_only (cur); 
 		}
 	}
 	else {
@@ -229,9 +238,7 @@ void exit (int status)
  // 					list_insert (&cur->myprocess->child_elem, &p->child_elem);
    	 				p->my_parent_die = true;
   				}
-//  				all_file_close (cur);
   				thread_exit_only (cur);
- // 				sema_up (&cur->myprocess->sema_wait);
 			}
 	}
 }

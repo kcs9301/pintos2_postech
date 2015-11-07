@@ -104,6 +104,7 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 
     if ((pool == &user_pool))
       ft_insert (pages);
+//        printf("success get page\n");
 
   return pages;
 }
@@ -140,9 +141,10 @@ palloc_free_multiple (void *pages, size_t page_cnt)
     NOT_REACHED ();
 
   if ((pool == &user_pool)){
-//    if (!ft_delete (pages))
+//    if (ft_delete (pages))
+//      printf ("success free page\n");
 //      PANIC ("Can not delete a frame table entry");
-    ft_delete (pages);
+      ft_delete (pages);
   }
 
   page_idx = pg_no (pages) - pg_no (pool->base);

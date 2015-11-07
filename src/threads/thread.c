@@ -303,7 +303,7 @@ thread_exit (void)
 
   printf ("%s: exit(%d)\n", cur->name, cur->myprocess->status);
 
-  file_close (cur->me);
+//  file_close (cur->me);
 
   all_file_close (cur);
 
@@ -330,7 +330,7 @@ thread_exit_only (struct thread *t)
 
   file_close (t->me);
 
-  all_file_close (t);
+//  all_file_close (t);
 
   intr_disable ();
   list_remove (&t->allelem);
