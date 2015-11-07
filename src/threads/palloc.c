@@ -140,8 +140,9 @@ palloc_free_multiple (void *pages, size_t page_cnt)
     NOT_REACHED ();
 
   if ((pool == &user_pool)){
-    if (!ft_delete (pages))
-      PANIC ("Can not delete a frame table entry");
+//    if (!ft_delete (pages))
+//      PANIC ("Can not delete a frame table entry");
+    ft_delete (pages);
   }
 
   page_idx = pg_no (pages) - pg_no (pool->base);

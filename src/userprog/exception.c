@@ -4,12 +4,20 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/palloc.h"
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
+
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+static bool setup_fault_addr (void *);
+static bool install_page (void *, void *, bool);
+bool stack_check (void *, void *);
+
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -127,7 +135,31 @@ page_fault (struct intr_frame *f)
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
 
-  exit (-1);
+  bool pass=false;
+
+
+ asm ("movl %%cr2, %0" : "=r" (fault_addr));
+
+  not_present = (f->error_code & PF_P) == 0;
+  write = (f->error_code & PF_W) != 0;
+  user = (f->error_code & PF_U) != 0;
+
+// printf ("%x", fault_addr);
+
+  if (not_present)
+    if (write)
+      if (user){
+        if ( !is_user_vaddr (fault_addr) || fault_addr < 0 || fault_addr == NULL || fault_addr < 0x08048000 || !stack_check (fault_addr, f->esp))
+            exit (-1);
+        if (setup_fault_addr (fault_addr))
+         pass = true;
+     }
+       
+
+  if (!pass)
+    exit (-1); 
+  if (pass)
+    return;
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -136,7 +168,7 @@ page_fault (struct intr_frame *f)
      See [IA32-v2a] "MOV--Move to/from Control Registers" and
      [IA32-v3a] 5.15 "Interrupt 14--Page Fault Exception
      (#PF)". */
-  asm ("movl %%cr2, %0" : "=r" (fault_addr));
+ 
 
   /* Turn interrupts back on (they were only off so that we could
      be assured of reading CR2 before it changed). */
@@ -146,9 +178,7 @@ page_fault (struct intr_frame *f)
   page_fault_cnt++;
 
   /* Determine cause. */
-  not_present = (f->error_code & PF_P) == 0;
-  write = (f->error_code & PF_W) != 0;
-  user = (f->error_code & PF_U) != 0;
+
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
@@ -158,6 +188,45 @@ page_fault (struct intr_frame *f)
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
+
   kill (f);
 }
 
+static bool
+setup_fault_addr (void *fault_addr)
+{
+  uint8_t *kpage;
+  bool success = false;
+
+  void *fa = pg_round_down (fault_addr);
+
+
+    kpage = palloc_get_page (PAL_USER | PAL_ZERO);  // KPAGE??!!!!!!!!????!?!?!
+    if (kpage != NULL) 
+     {
+       success = install_page ( fa , kpage, true);
+        if (!success)
+         palloc_free_page (kpage);
+      }
+
+  return success;
+}
+
+static bool
+install_page (void *upage, void *kpage, bool writable)
+{
+  struct thread *t = thread_current ();
+
+  /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+bool 
+stack_check (void *fa, void *esp)
+{
+  if (fa < esp-4000)
+    return false;
+  return true;
+}
