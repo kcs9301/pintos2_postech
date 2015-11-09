@@ -15,8 +15,9 @@ static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 static bool setup_fault_addr (void *);
+static bool setup_fault_load (void *);
 static bool install_page (void *, void *, bool);
-bool stack_check (void *, void *);
+bool stack_check (void *);
 
 
 /* Registers handlers for interrupts that can be caused by user
@@ -146,13 +147,21 @@ page_fault (struct intr_frame *f)
 
 // printf ("%x", fault_addr);
 
-  if (not_present)
-    if (write)
-      if (user){
-        if ( !is_user_vaddr (fault_addr) || fault_addr < 0 || fault_addr == NULL || fault_addr < 0x08048000 || !stack_check (fault_addr, f->esp))
+  if (not_present){
+        if ( !is_user_vaddr (fault_addr) || fault_addr < 0 || fault_addr == NULL || fault_addr < 0x08048000 )
             sys_exit (-1);
-        if (setup_fault_addr (fault_addr))
-         pass = true;
+
+        if (stack_check (fault_addr)){
+          if (fault_addr < f->esp -32)
+            sys_exit (-1);
+          if (setup_fault_addr (fault_addr))
+            pass = true;
+        }
+        /*
+        else{
+          if (setup_fault_load (fault_addr))
+            pass = true;
+        }*/
      }
        
 
@@ -213,6 +222,68 @@ setup_fault_addr (void *fault_addr)
 }
 
 static bool
+setup_fault_load (void *fault_addr) // This may success after memory mapped filesys.
+{
+  struct thread *t = thread_current ();
+  struct file *file = t->myfile;
+
+  off_t ofs = t->ofs;
+  uint8_t upage = t->upage;
+  uint32_t read_bytes = t->read_bytes;
+  uint32_t zero_bytes = t->zero_bytes;
+  bool writable = t->writable;
+
+  ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
+  ASSERT (pg_ofs (upage) == 0);
+  ASSERT (ofs % PGSIZE == 0);
+
+  file_seek (file, ofs);
+
+  if ( !(read_bytes > 0 || zero_bytes > 0) )
+    return false; 
+    
+      /* Calculate how to fill this page.
+         We will read PAGE_READ_BYTES bytes from FILE
+         and zero the final PAGE_ZERO_BYTES bytes. */  
+      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+      /* Get a page of memory. */  
+      uint8_t *kpage = palloc_get_page (PAL_USER);
+      if (kpage == NULL)
+        return false;
+
+      /* Load this page. */  
+      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+        {
+          palloc_free_page (kpage);
+          return false; 
+        }
+      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+
+      /* Add the page to the process's address space. */  
+      if (!install_page (upage, kpage, writable)) 
+        {
+          palloc_free_page (kpage);
+          return false; 
+        }
+
+      /* Advance. */  
+      read_bytes -= page_read_bytes;
+      zero_bytes -= page_zero_bytes;
+      upage += PGSIZE;
+
+  t->ofs = ofs;
+  t->upage = upage;
+  t->read_bytes = read_bytes;
+  t->zero_bytes = zero_bytes;
+  t->writable = writable; 
+
+  return true;
+
+}
+
+static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
@@ -224,9 +295,9 @@ install_page (void *upage, void *kpage, bool writable)
 }
 
 bool 
-stack_check (void *fa, void *esp)
+stack_check (void *fa)  //stack limit is 80KB
 {
-  if (fa < esp-4000)
-    return false;
-  return true;
+  if ( PHYS_BASE - (1024 * 4 * 20) < fa && fa < PHYS_BASE )
+    return true;
+  return false;
 }

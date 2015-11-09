@@ -127,6 +127,16 @@ struct thread
     struct file *fd_list[FD_MAX];
     int fd_num; 
     struct file *open_file;
+
+    // for on demand load
+
+    struct file *myfile;
+    off_t ofs;
+    uint8_t *upage;
+    uint32_t read_bytes;
+    uint32_t zero_bytes;
+    bool writable;
+
   };
 
 /* If false (default), use round-robin scheduler.
