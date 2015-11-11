@@ -128,14 +128,7 @@ struct thread
     int fd_num; 
     struct file *open_file;
 
-    // for on demand load
-
-    struct file *myfile;
-    off_t ofs;
-    uint8_t *upage;
-    uint32_t read_bytes;
-    uint32_t zero_bytes;
-    bool writable;
+    struct list spage_list;
 
   };
 
@@ -197,4 +190,54 @@ int div_x_y (int x, int y);
 int div_x_n (int x, int n);
 int get_test_readys (void);
 bool is_thread_mlfqs (void);
-#endif /* threads/thread.h */
+
+//#endif /* threads/thread.h */
+
+
+
+//#ifndef VM
+
+#include <list.h>
+#include "threads/frame.h"
+
+#define FILE 0
+#define SWAP 1
+#define MMAP 2
+
+#define SP_ADDR 0xfffff000
+
+struct spage_entry {
+  int type;
+
+  bool already_loaded;
+  bool pinned;
+
+  //lazy load
+  struct file *myfile;
+  off_t ofs;
+  uint8_t *upage;
+  uint32_t read_bytes;
+  uint32_t zero_bytes;
+  bool writable;
+  
+  // swap
+  size_t index;
+  
+  struct list_elem s_elem;
+};
+
+void spage_table_init (void);
+//void spage_table_destroy (void);
+
+bool load_page (void *);
+bool from_swap (struct spage_entry *);
+bool from_file (struct spage_entry *);
+bool file_elem_spage_table (struct file *file, int32_t ofs, uint8_t *upage,
+           uint32_t read_bytes, uint32_t zero_bytes,
+           bool writable);
+bool mmap_elem_page_table(struct file *file, int32_t ofs, uint8_t *upage,
+          uint32_t read_bytes, uint32_t zero_bytes);
+struct spage_entry* find_entry (void *);
+
+#endif 
+
