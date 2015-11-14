@@ -10,6 +10,8 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/thread.h"
+#include "devices/block.h"
 
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
@@ -32,6 +34,12 @@ struct pool
     struct bitmap *used_map;            /* Bitmap of free pages. */
     uint8_t *base;                      /* Base of pool. */
   };
+
+  static struct block *swap_block;
+  static struct bitmap *swap_bitmap;
+  static struct lock swap_lock;
+  
+  static struct list frame_list;
 
 /* Two pools: one for kernel data, one for user pages. */
 static struct pool kernel_pool, user_pool;
@@ -59,7 +67,7 @@ palloc_init (size_t user_page_limit)
   init_pool (&kernel_pool, free_start, kernel_pages, "kernel pool");
   init_pool (&user_pool, free_start + kernel_pages * PGSIZE,
              user_pages, "user pool");
-  frame_table_init (user_pages);
+  frame_table_init ();
 }
 
 /* Obtains and returns a group of PAGE_CNT contiguous free pages.
@@ -77,9 +85,6 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 
   if (page_cnt == 0)
     return NULL;
-
-  if (page_cnt == 1 && (pool == &user_pool))
-    ft_check ();
 
   lock_acquire (&pool->lock);
   page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
@@ -101,11 +106,7 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
         PANIC ("palloc_get: out of pages");
     }
 
-    if ((pool == &user_pool))
-      ft_insert (pages);
-//        printf("success get page\n");
-
-  return pages;
+   return pages;
 }
 
 /* Obtains a single free page and returns its kernel virtual
@@ -138,13 +139,6 @@ palloc_free_multiple (void *pages, size_t page_cnt)
     pool = &user_pool;
   else
     NOT_REACHED ();
-
-  if ((pool == &user_pool)){
-//    if (ft_delete (pages))
-//      printf ("success free page\n");
-//      PANIC ("Can not delete a frame table entry");
-      ft_delete (pages);
-  }
 
   page_idx = pg_no (pages) - pg_no (pool->base);
 
@@ -198,76 +192,145 @@ page_from_pool (const struct pool *pool, void *page)
 
 
 
-
-static uint32_t *ft;
-
-uint32_t
-ft_total (uint32_t *ft){
-  return *(ft + 1);
-}
-
-uint32_t
-ft_usable (uint32_t *ft){
-  return *(ft + 2);
-}
-
-uint32_t
-ft_using (uint32_t *ft){
-  return *(ft + 1) - *(ft + 2);
-}
-
-
-void 
-frame_table_init (size_t upages)
+void swap_init (void)
 {
-  ft = palloc_get_page (PAL_ZERO);
-  *(ft+1) = upages;
-  *(ft+2) = upages;
+  swap_block = block_get_role (BLOCK_SWAP);
+  if (!swap_block)
+    PANIC ("No Swap Block");
+
+  swap_bitmap = bitmap_create( block_size(swap_block) / (PGSIZE / BLOCK_SECTOR_SIZE) );
+  if (!swap_bitmap)
+    PANIC ("NO Swap Bitmap");
+
+  bitmap_set_all(swap_bitmap, 0);
+  lock_init (&swap_lock);
 }
 
-bool
-ft_check (void)
-{
-  if (ft_usable (ft) < 1)
-    PANIC ("Out of Pages from ft"); // change later
-  else
-    return true;
-}
 
-bool
-ft_insert (void *fpage)
+size_t swap_out (void *fpage)
 {
-  if (ft_usable (ft) < 1)
-    PANIC ("Out of Pages from ft");
+    lock_acquire(&swap_lock);
+  size_t offset = bitmap_scan_and_flip(swap_bitmap, 0, 1, 0);
 
-  int i = 3;  // because of total & usable
-  for (i; i < ft_using (ft) + 4 ;i++)
-  {
-    uint32_t info = *(ft+i);
-    if (info & FTE_P == 0x0){
-      *(ft+i) = * (uint32_t *) fpage | FTE_P;
-      *(ft+2) -= 1;
-      return true;
+  if (offset == BITMAP_ERROR)
+    {
+      PANIC("Out of Swap");
     }
-  }
+
+  int i;
+  for (i = 0; i < (PGSIZE / BLOCK_SECTOR_SIZE); i++)
+    { 
+      block_write(swap_block, offset * (PGSIZE / BLOCK_SECTOR_SIZE) + i,
+      (uint8_t *) fpage + i * BLOCK_SECTOR_SIZE);
+    }
+  lock_release(&swap_lock);
+  return offset;
 }
 
-bool
-ft_delete (void *fpage)
+void swap_in (size_t offset, void *fpage)
 {
-  int i = 3;
-  int count = 0;
-  for (i; count < ft_using (ft) ; i++)
+  lock_acquire(&swap_lock);
+  
+  bitmap_flip(swap_bitmap, offset);
+
+  int i;
+  for (i = 0; i < (PGSIZE / BLOCK_SECTOR_SIZE); i++)
+    {
+      block_read(swap_block, offset * (PGSIZE / BLOCK_SECTOR_SIZE) + i,
+     (uint8_t *) fpage + i * BLOCK_SECTOR_SIZE);
+    }
+  lock_release(&swap_lock);
+}
+
+
+//////////////////////////////////////////////////////////////
+
+void frame_table_init (void)
+{
+  list_init (&frame_list);
+  lock_init (&frame_lock);
+}
+
+void *
+frame_get_page (struct spage_entry *se)
+{
+  lock_acquire (&frame_lock);
+  void *try_get_frame = palloc_get_page (PAL_USER);
+
+  if (!try_get_frame) // No free page in DRAM
   {
-    uint32_t info = *(ft+i);
-    if (info & FTE_P == 0x1){
-      if ((info & FTE_ADDR) == fpage){
-        *(ft+i) = FTE_P;
-        *(ft+2) += 1;
-        return true;
+    try_get_frame = frame_evict ();
+    if (!try_get_frame)
+      PANIC ("Cannot get a free page frome the functionc call, frame_evict");
+  }
+
+  if (!frame_insert (try_get_frame, se))
+    PANIC ("Cannot insert info into frame table");
+  return try_get_frame;
+ }
+
+bool
+frame_insert (void *fpage, struct spage_entry *se)
+{
+  struct frame_entry *fe = malloc(sizeof (struct frame_entry));
+  if (fe == NULL)
+    return false;
+  fe -> fpage = fpage;
+  fe -> se = se;
+  fe -> t = thread_current ();
+  se -> fe = fe;
+  list_push_back (&frame_list, &fe->f_elem);
+  return true;
+}
+
+// copy to swap disk and remove the information in DRAM
+bool
+frame_to_swap (struct frame_entry *fe)
+{
+  struct spage_entry *se = fe->se;
+  ASSERT (se->already_loaded);
+  if (NULL == pagedir_get_page (fe->t->pagedir, se->upage))
+    return false;
+  if (se->pinned)
+    return false;
+  se->swap_offset = swap_out (fe->fpage);
+  se->type = 1;
+  se->already_loaded = false;
+  list_remove (&fe->f_elem);
+  pagedir_clear_page (fe->t->pagedir, fe->se->upage);
+  palloc_free_page (fe->fpage);
+  free (fe);
+//  lock_release (&frame_lock);
+  return true;
+}
+
+// evict some frame page and give a free page
+void *
+frame_evict (void)
+{
+  struct list_elem *e;
+  void *pgp;
+  for(e = list_begin (&frame_list); e != list_end (&frame_list); e = list_next(e)){
+    struct frame_entry *fe = list_entry (e, struct frame_entry, f_elem);
+    //struct thread *t = fe->t;
+    struct spage_entry *se = fe->se;
+
+    switch (se->type){
+      case 0:{
+        if (frame_to_swap (fe))
+          pgp = palloc_get_page (PAL_USER);
+        else
+          list_push_back (&frame_list, e);
+        if (pgp !=NULL)
+          return pgp;
+        }
+      
+      case 1:
+        PANIC ("Some page exists in frame list, which should have been in swap disk");
+      case 2 :
+        PANIC ("NOT YET");
       }
-      count ++;
-    }
-  }
-  return false;
-}
+    }  
+  
+ }
+

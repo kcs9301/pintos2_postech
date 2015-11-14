@@ -198,7 +198,6 @@ bool is_thread_mlfqs (void);
 //#ifndef VM
 
 #include <list.h>
-#include "threads/frame.h"
 
 #define FILE 0
 #define SWAP 1
@@ -221,13 +220,16 @@ struct spage_entry {
   bool writable;
   
   // swap
-  size_t index;
+  size_t swap_offset;
   
   struct list_elem s_elem;
+  struct frame_entry *fe;
 };
 
 void spage_table_init (void);
 //void spage_table_destroy (void);
+
+struct spage_entry *find_swap (void *);
 
 bool load_page (void *);
 bool from_swap (struct spage_entry *);
@@ -237,7 +239,11 @@ bool file_elem_spage_table (struct file *file, int32_t ofs, uint8_t *upage,
            bool writable);
 bool mmap_elem_page_table(struct file *file, int32_t ofs, uint8_t *upage,
           uint32_t read_bytes, uint32_t zero_bytes);
-struct spage_entry* find_entry (void *);
+struct spage_entry *find_entry (void *);
+bool swap_elem_spage_table (void *, void *);
+struct spage_etnry *find_entry_with_fpage (void *fpage, void *slist);
+
+struct lock frame_lock;
 
 #endif 
 

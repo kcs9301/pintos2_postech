@@ -27,26 +27,25 @@ void palloc_free_multiple (void *, size_t page_cnt);
 #define FTE_P 0x1
 #define FTE_R 0x2
 
-/////////////////////////////////////////////////////////////////////////////////
-/*
+void swap_init (void);
+size_t swap_out (void *fpage);
+void swap_in (size_t offset, void *fpage);
 
-31                       12   11         1 0
-      Physical Page         |            R P
+struct frame_entry
+{
+	void *fpage;
+	struct thread *t;
+	struct spage_entry *se;
+	struct list_elem f_elem;
+};
 
-entry 1 is always the number of total pages
-entry 2 is always the number of usable pages
 
-
-
-
-
-*/
-/////////////////////////////////////////////////////////////////////////////////
-
-void frame_table_init (size_t);
-bool ft_check (void);
-bool ft_insert (void *);
-bool ft_delete (void *);
-
+void frame_table_init (void);
+void *frame_get_page (struct spage_entry *);
+bool frame_insert (void *, struct spage_entry *);
+bool
+frame_to_swap (struct frame_entry *fe);
+void *
+frame_evict (void);
 
 #endif /* threads/palloc.h */

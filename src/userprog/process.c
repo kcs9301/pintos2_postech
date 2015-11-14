@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <list.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -25,6 +26,9 @@ void push_arg_addr (void **esp, void *addr);
 void push_a_char (void **esp, void *addr);
 int tokenize (char *input_buf, char *parameters[]);
 struct thread* find_child (tid_t child_tid, struct thread *t);
+bool
+evict_all_se (struct thread *t);
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -163,7 +167,10 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-
+  lock_acquire (&frame_lock);
+  if (!evict_all_se (cur))
+    PANIC ("Cannot remove all se from the exitting thread");
+  lock_release (&frame_lock);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -180,6 +187,26 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+}
+
+bool
+evict_all_se (struct thread *t)
+{
+  struct list *sp_list = &t->spage_list;
+  struct list_elem *e;
+  for(e = list_begin (sp_list); e != list_end (sp_list); )
+  {
+    struct spage_entry *se = list_entry (e, struct spage_entry, s_elem);
+    e = list_next(e);
+    if (se->already_loaded){
+      list_remove (&se->fe->f_elem);
+      free (se->fe);
+    }
+    // if this data in the swap or file then we should remove that as well as DRAM
+    // the case of tyep 0, pagedir_destory can remove the data
+    free (se);
+  }
+  return true;
 }
 
 /* Sets up the CPU for running user code in the current

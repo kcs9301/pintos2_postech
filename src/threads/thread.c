@@ -416,7 +416,7 @@ void
 thread_exit (void) 
 {
   ASSERT (!intr_context ());
-
+intr_disable ();
 #ifdef USERPROG
   process_exit ();
 #endif
@@ -424,7 +424,7 @@ thread_exit (void)
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it call thread_schedule_tail(). */
-  intr_disable ();
+  
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
   schedule ();
@@ -848,7 +848,7 @@ bool load_page (void *upage)
     case 0: //lazy load (from file system)
       return from_file (se);
     case 1: //swap
-//      return from_swap (se);
+      return from_swap (se);
     case 2: //mmap
       return from_file (se);
     default :
@@ -873,6 +873,7 @@ bool from_file (struct spage_entry *se)
   uint32_t zero_bytes = se->zero_bytes;
   bool writable = se->writable;
 
+  ASSERT (!se->already_loaded);
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (se->upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
@@ -891,7 +892,8 @@ bool from_file (struct spage_entry *se)
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */  
-      uint8_t *kpage = palloc_get_page (PAL_USER);
+      uint8_t *kpage = frame_get_page (se);
+      lock_release (&frame_lock);
       if (kpage == NULL)
         return false;
 
@@ -912,6 +914,28 @@ bool from_file (struct spage_entry *se)
           palloc_free_page (kpage);
           return false; 
         }
+
+  se->already_loaded = true;
+  return true;
+}
+
+bool from_swap (struct spage_entry *se)
+{
+  void *fpage = frame_get_page (se);
+
+  lock_release (&frame_lock);
+  if (fpage == NULL){
+    return false;
+  }
+  swap_in (se->swap_offset, fpage);
+  se->type = 0;
+  se->already_loaded = true;
+  if (!install_page (se->upage, fpage, se->writable))
+  {
+    palloc_free_page (fpage);
+
+    return false;
+  }
 
   return true;
 }
@@ -938,7 +962,6 @@ bool file_elem_spage_table (struct file *file, int32_t ofs, uint8_t *upage,
   return true;
 
 }
-
 
 struct spage_entry *find_entry (void *vpn)
 {
