@@ -310,13 +310,15 @@ frame_evict (void)
 {
   struct list_elem *e;
   void *pgp;
-  for(e = list_begin (&frame_list); e != list_end (&frame_list); e = list_next(e)){
+  while(true){
+    e = list_pop_front (&frame_list);
     struct frame_entry *fe = list_entry (e, struct frame_entry, f_elem);
     //struct thread *t = fe->t;
     struct spage_entry *se = fe->se;
 
     switch (se->type){
       case 0:{
+        if (!se->pinned){
         if (frame_to_swap (fe))
           pgp = palloc_get_page (PAL_USER);
         else
@@ -324,6 +326,7 @@ frame_evict (void)
         if (pgp !=NULL)
           return pgp;
         }
+      }
       
       case 1:
         PANIC ("Some page exists in frame list, which should have been in swap disk");

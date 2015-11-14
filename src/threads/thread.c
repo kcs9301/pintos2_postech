@@ -893,16 +893,18 @@ bool from_file (struct spage_entry *se)
 
       /* Get a page of memory. */  
       uint8_t *kpage = frame_get_page (se);
-      lock_release (&frame_lock);
-      if (kpage == NULL)
+      if (kpage == NULL){
+        lock_release (&frame_lock);
         return false;
+      }
 
       /* Load this page. */  
-//      lock_acquire (&filesys_lock);
+//         lock_acquire (&filesys_lock);
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
 //          lock_release (&filesys_lock);
           palloc_free_page (kpage);
+          lock_release (&frame_lock);
           return false; 
         }
 //          lock_release (&filesys_lock);
@@ -911,11 +913,14 @@ bool from_file (struct spage_entry *se)
       /* Add the page to the process's address space. */  
       if (!install_page (se->upage, kpage, writable)) 
         {
+
           palloc_free_page (kpage);
+          lock_release (&frame_lock);
           return false; 
         }
 
   se->already_loaded = true;
+  lock_release (&frame_lock);
   return true;
 }
 
@@ -923,8 +928,8 @@ bool from_swap (struct spage_entry *se)
 {
   void *fpage = frame_get_page (se);
 
-  lock_release (&frame_lock);
   if (fpage == NULL){
+  lock_release (&frame_lock);
     return false;
   }
   swap_in (se->swap_offset, fpage);
@@ -933,10 +938,11 @@ bool from_swap (struct spage_entry *se)
   if (!install_page (se->upage, fpage, se->writable))
   {
     palloc_free_page (fpage);
-
+  lock_release (&frame_lock);
     return false;
   }
 
+  lock_release (&frame_lock);
   return true;
 }
 

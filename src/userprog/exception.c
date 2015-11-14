@@ -210,15 +210,30 @@ setup_fault_addr (void *fault_addr)
 
   void *fa = pg_round_down (fault_addr);
 
+    struct spage_entry *se = malloc (sizeof (struct spage_entry));
+    if (se == NULL)
+      return false;
 
-    kpage = palloc_get_page (PAL_USER | PAL_ZERO);  // KPAGE??!!!!!!!!????!?!?!
+    se->type = 0;
+    se->already_loaded = true;
+    se->pinned =false;
+    se->upage = fa;
+    se->writable = true;
+    
+    list_push_back (&thread_current ()->spage_list, &se->s_elem);
+
+    kpage = frame_get_page (se);
+    
     if (kpage != NULL) 
      {
        success = install_page ( fa , kpage, true);
         if (!success)
          palloc_free_page (kpage);
+       else
+        memset (kpage, 0, PGSIZE);
       }
 
+  lock_release (&frame_lock);
   return success;
 }
 
@@ -236,7 +251,7 @@ install_page (void *upage, void *kpage, bool writable)
 bool 
 stack_check (void *fa)  //stack limit is 80KB
 {
-  if ( PHYS_BASE - (1024 * 4 * 20) < fa && fa < PHYS_BASE )
+  if ( PHYS_BASE - (1024 * 4 * 2048) < fa && fa < PHYS_BASE )
     return true;
   return false;
 }
