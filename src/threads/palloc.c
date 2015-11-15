@@ -291,7 +291,7 @@ frame_to_swap (struct frame_entry *fe)
   ASSERT (se->already_loaded);
   if (NULL == pagedir_get_page (fe->t->pagedir, se->upage))
     return false;
-  if (se->pinned)
+  if (se->pinned || se->type==2 )
     return false;
   se->swap_offset = swap_out (fe->fpage);
   se->type = 1;

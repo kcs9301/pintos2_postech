@@ -28,6 +28,10 @@ int tokenize (char *input_buf, char *parameters[]);
 struct thread* find_child (tid_t child_tid, struct thread *t);
 bool
 evict_all_se (struct thread *t);
+bool
+close_all_mmap (struct thread *t);
+bool
+close_mmap (int mapping);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -171,6 +175,7 @@ process_exit (void)
   if (!evict_all_se (cur))
     PANIC ("Cannot remove all se from the exitting thread");
   lock_release (&frame_lock);
+  close_all_mmap (cur);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -198,7 +203,7 @@ evict_all_se (struct thread *t)
   for(e = list_begin (sp_list); e != list_end (sp_list); )
   {
     struct spage_entry *se = list_entry (e, struct spage_entry, s_elem);
-    e = list_next(e);
+    e = list_next (e);
     if (se->already_loaded){
       list_remove (&se->fe->f_elem);
       free (se->fe);
@@ -209,6 +214,78 @@ evict_all_se (struct thread *t)
   }
   return true;
 }
+
+bool
+close_all_mmap (struct thread *t)
+{
+  struct list *mmap_list = &t->mmap_list;
+  struct list_elem *e;
+  for (e = list_begin (mmap_list); e != list_end (mmap_list); )
+  {
+    struct spage_entry *se = list_entry (e, struct spage_entry, mm_elem);
+    e = list_next (e);
+
+    if (pagedir_is_dirty (t->pagedir, se->upage))
+    {
+      lock_acquire(&filesys_lock);
+      file_write_at(se->myfile, se->upage,se->read_bytes, se->ofs);
+      lock_release(&filesys_lock);
+    }
+
+    lock_acquire (&frame_lock);
+    list_remove (&se->fe->f_elem);
+    pagedir_clear_page(t->pagedir, se->upage);
+    palloc_free_page (se->fe->fpage);
+    lock_release (&frame_lock);
+    list_remove (&se->mm_elem);
+
+  }
+  return true;
+}
+
+bool
+close_mmap (int mapping)
+{
+  lock_acquire (&frame_lock);
+  struct thread *t = thread_current ();
+  struct list *mmap_list = &t->mmap_list;
+  struct list_elem *e;
+  for (e = list_begin (mmap_list); e != list_end (mmap_list); )
+  {
+    struct spage_entry *se = list_entry (e, struct spage_entry, mm_elem);
+    if (se->mmapid == mapping)
+    {
+      if (se->already_loaded){
+        if (pagedir_is_dirty (t->pagedir, se->upage))
+        {
+          lock_acquire(&filesys_lock);
+          file_write_at(se->myfile, se->upage,se->read_bytes, se->ofs);
+          lock_release(&filesys_lock);
+        }
+     
+       list_remove (&se->fe->f_elem);
+       palloc_free_page (se->fe->fpage);
+       list_remove (&se->s_elem);
+       e = list_next (e);
+       list_remove (&se->mm_elem);
+       pagedir_clear_page(t->pagedir, se->upage);
+     
+       free (se);
+    }
+    else{
+      e = list_next (e);
+      list_remove (&se->mm_elem);
+      list_remove (&se->s_elem);
+      free (se);
+      }
+   }
+   else
+      e = list_next (e);
+  }
+  lock_release (&frame_lock);
+  return true;
+}
+
 
 /* Sets up the CPU for running user code in the current
    thread.

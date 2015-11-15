@@ -30,6 +30,7 @@ static int sys_filesize (int fd, struct intr_frame *f);
 static void sys_seek (int fd, unsigned position, struct intr_frame *f);
 static unsigned sys_tell (int fd, struct intr_frame *f);
 static void sys_close (int fd, struct intr_frame *f);
+static int sys_mmap (int fd, void *addr, struct intr_frame *f);
 
 void
 syscall_init (void) 
@@ -114,7 +115,77 @@ syscall_handler (struct intr_frame *f)
     check_fd(*((int *)f->esp + 1), 0, f)
     sys_close (*((int *)f->esp + 1), f);
     break;
+  case SYS_MMAP:
+    esp_under_phys_base (f, 2);
+    check_fd(*((int *)f->esp + 1), -1, f)
+    sys_mmap (*((int *)f->esp + 1), *((int **)f->esp + 2), f);
+    break;
+  case SYS_MUNMAP:
+    esp_under_phys_base (f, 1);
+    check_fd(*((int *)f->esp + 1), -1, f)
+    sys_munmap (*((int *)f->esp + 1), f);
+    break;
   }
+}
+
+void sys_munmap (int mapping, struct intr_frame *f)
+{
+  if (!close_mmap (mapping))
+    f->eax = -1;
+  else
+    f->eax = 0;
+}
+
+int sys_mmap (int fd, void *addr, struct intr_frame *f)
+{
+  ASSERT (fd >= 0 && fd < FD_MAX);
+  struct thread *t = thread_current();
+  struct file *file;
+
+  if (!is_user_vaddr(addr) || addr < 0x08048000 ||
+      ((uint32_t) addr % PGSIZE) != 0)
+  {
+    f->eax = -1;
+    return f->eax;
+  }
+
+    if (t->fd_list[fd] == NULL)
+      f->eax = -1;
+    else{
+      file = file_reopen (t->fd_list[fd]);
+      if (file_length (file) == 0 || file == NULL)
+        f->eax = -1;
+      else {
+        uint32_t read_bytes = file_length (file);
+        uint32_t zero_bytes = PGSIZE - (read_bytes % PGSIZE);
+        off_t ofs = 0;
+        bool writable = true;
+        file_seek (file, ofs);
+        int mmapid = t->total_mmap_num;
+
+        while (read_bytes > 0 || zero_bytes > 0) 
+    {
+      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+      if (!mmap_elem_spage_table (file, ofs, addr, read_bytes, zero_bytes, writable,
+        mmapid)){
+        f->eax = -1;
+        // remove a mmap list and ~~
+        PANIC ("need to consider more about this");
+        return f->eax;
+      }
+ 
+      read_bytes -= page_read_bytes;
+      zero_bytes -= page_zero_bytes;
+      ofs += PGSIZE; //page_read_bytes;
+      addr += PGSIZE;
+    }
+    f->eax = mmapid;
+    t->total_mmap_num++;
+      }
+    }
+    return f->eax;
 }
 
 

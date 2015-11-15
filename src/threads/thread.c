@@ -635,12 +635,14 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exit_code = 0;
   t->end = false;
   t->success_to_load = false;
+  t->total_mmap_num = 0;
   sema_init (&t->wait_this, 0); /* For Project #2 */
   sema_init (&t->kill_this, 0);
   sema_init (&t->wait_start_process, 0);
   list_init (&t->children_list);
   list_init (&t->lock_list);
   list_init (&t->spage_list);
+  list_init (&t->mmap_list);
 
   memset (&t->fd_list, 0, (sizeof(struct file*)) * FD_MAX);
   t->fd_num = 2;
@@ -967,6 +969,30 @@ bool file_elem_spage_table (struct file *file, int32_t ofs, uint8_t *upage,
   list_push_back (&thread_current ()->spage_list, &se->s_elem);
   return true;
 
+}
+
+bool mmap_elem_spage_table (struct file *file, int32_t ofs, uint8_t *upage,
+           uint32_t read_bytes, uint32_t zero_bytes,
+           bool writable, int mmapid)
+{
+  struct spage_entry *se = malloc (sizeof (struct spage_entry));
+  if (se == NULL)
+    return false;
+
+  se->type = 2;
+  se->already_loaded = false;
+  se->pinned = false;
+  se->myfile = file;
+  se->ofs = ofs;
+  se->upage = upage;
+  se->read_bytes = read_bytes;
+  se->zero_bytes = zero_bytes;
+  se->writable = writable;
+  se->mmapid = mmapid;
+
+  list_push_back (&thread_current ()->spage_list, &se->s_elem);
+  list_push_back (&thread_current ()->mmap_list, &se->mm_elem);
+  return true;
 }
 
 struct spage_entry *find_entry (void *vpn)

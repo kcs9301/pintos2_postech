@@ -130,6 +130,9 @@ struct thread
 
     struct list spage_list;
 
+    struct list mmap_list;
+    int total_mmap_num;
+
   };
 
 /* If false (default), use round-robin scheduler.
@@ -224,6 +227,9 @@ struct spage_entry {
   
   struct list_elem s_elem;
   struct frame_entry *fe;
+
+  int mmapid;
+  struct list_elem mm_elem;
 };
 
 void spage_table_init (void);
