@@ -143,7 +143,7 @@ int sys_mmap (int fd, void *addr, struct intr_frame *f)
   struct thread *t = thread_current();
   struct file *file;
 
-  if (!is_user_vaddr(addr) || addr < 0x08048000/*0xaa55aa55*/ || addr > (PHYS_BASE - (1024 * 4 * 2048))
+  if (!is_user_vaddr(addr) || addr < 0x0fffffff /*0x08048000/*0xaa55aa55*/ || addr > (PHYS_BASE - (1024 * 4 * 2048))
      || ((uint32_t) addr % PGSIZE) != 0)
   {
     f->eax = -1;
