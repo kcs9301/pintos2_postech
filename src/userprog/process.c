@@ -174,8 +174,8 @@ process_exit (void)
   lock_acquire (&frame_lock);
   if (!evict_all_se (cur))
     PANIC ("Cannot remove all se from the exitting thread");
-  lock_release (&frame_lock);
   close_all_mmap (cur);
+  lock_release (&frame_lock);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -228,15 +228,15 @@ close_all_mmap (struct thread *t)
     if (pagedir_is_dirty (t->pagedir, se->upage))
     {
       lock_acquire(&filesys_lock);
-      file_write_at(se->myfile, se->upage,se->read_bytes, se->ofs);
+      file_write_at(se->myfile, se->upage, se->read_bytes, se->ofs);
       lock_release(&filesys_lock);
     }
 
-    lock_acquire (&frame_lock);
+//    lock_acquire (&frame_lock);
     list_remove (&se->fe->f_elem);
     pagedir_clear_page(t->pagedir, se->upage);
     palloc_free_page (se->fe->fpage);
-    lock_release (&frame_lock);
+//    lock_release (&frame_lock);
     list_remove (&se->mm_elem);
 
   }
@@ -246,7 +246,7 @@ close_all_mmap (struct thread *t)
 bool
 close_mmap (int mapping)
 {
-  lock_acquire (&frame_lock);
+//  lock_acquire (&frame_lock);
   struct thread *t = thread_current ();
   struct list *mmap_list = &t->mmap_list;
   struct list_elem *e;
@@ -282,7 +282,7 @@ close_mmap (int mapping)
    else
       e = list_next (e);
   }
-  lock_release (&frame_lock);
+//  lock_release (&frame_lock);
   return true;
 }
 

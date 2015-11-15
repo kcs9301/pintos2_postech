@@ -266,6 +266,9 @@ frame_get_page (struct spage_entry *se)
 
   if (!frame_insert (try_get_frame, se))
     PANIC ("Cannot insert info into frame table");
+
+  se->already_loaded = true;
+  se->type = 0;
   return try_get_frame;
  }
 
@@ -293,6 +296,12 @@ frame_to_swap (struct frame_entry *fe)
     return false;
   if (se->pinned || se->type==2 )
     return false;
+  /*
+  if (pagedir_is_accessed (fe->t->pagedir, se->upage))
+  {
+    pagedir_set_accessed (fe->t->pagedir, se->upage, false);
+    return false;
+  }*/
   se->swap_offset = swap_out (fe->fpage);
   se->type = 1;
   se->already_loaded = false;
@@ -317,22 +326,39 @@ frame_evict (void)
     struct spage_entry *se = fe->se;
 
     switch (se->type){
-      case 0:{
+      case 0:
+      {
+
         if (!se->pinned){
-        if (frame_to_swap (fe))
-          pgp = palloc_get_page (PAL_USER);
+          if (frame_to_swap (fe)){
+            pgp = palloc_get_page (PAL_USER);
+              if (pgp !=NULL)
+                return pgp;
+              else
+                PANIC ("wrong");
+            }
+          else
+            list_push_back (&frame_list, e);
+          
+          }
         else
           list_push_back (&frame_list, e);
-        if (pgp !=NULL)
-          return pgp;
-        }
       }
       
       case 1:
-        PANIC ("Some page exists in frame list, which should have been in swap disk");
-      case 2 :
-        PANIC ("NOT YET");
+      {
+ //       ASSERT (!se->already_loaded);
+        list_push_back (&frame_list, e);
       }
+        //PANIC ("Some page exists in frame list, which should have been in swap disk");
+      case 2 :
+        list_push_back (&frame_list, e);
+      //        PANIC ("NOT YET");
+      }
+      if (e == list_end(&frame_list))
+  {
+    e = list_begin(&frame_list);
+  }
     }  
   
  }

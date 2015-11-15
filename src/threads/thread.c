@@ -845,7 +845,6 @@ bool load_page (void *upage)
   struct spage_entry *se = find_entry (vpn);
   if (se == NULL)
     return false;
-
   switch (se->type){
     case 0: //lazy load (from file system)
       return from_file (se);
@@ -920,8 +919,7 @@ bool from_file (struct spage_entry *se)
           lock_release (&frame_lock);
           return false; 
         }
-
-  se->already_loaded = true;
+//  se->pinned = true;
   lock_release (&frame_lock);
   return true;
 }

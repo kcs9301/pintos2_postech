@@ -31,6 +31,7 @@ static void sys_seek (int fd, unsigned position, struct intr_frame *f);
 static unsigned sys_tell (int fd, struct intr_frame *f);
 static void sys_close (int fd, struct intr_frame *f);
 static int sys_mmap (int fd, void *addr, struct intr_frame *f);
+bool overlap_check (void *addr);
 
 void
 syscall_init (void) 
@@ -142,8 +143,14 @@ int sys_mmap (int fd, void *addr, struct intr_frame *f)
   struct thread *t = thread_current();
   struct file *file;
 
-  if (!is_user_vaddr(addr) || addr < 0x08048000 ||
-      ((uint32_t) addr % PGSIZE) != 0)
+  if (!is_user_vaddr(addr) || addr < 0x08048000/*0xaa55aa55*/ || addr > (PHYS_BASE - (1024 * 4 * 2048))
+     || ((uint32_t) addr % PGSIZE) != 0)
+  {
+    f->eax = -1;
+    return f->eax;
+  }
+
+  if (!overlap_check (addr))
   {
     f->eax = -1;
     return f->eax;
@@ -186,6 +193,19 @@ int sys_mmap (int fd, void *addr, struct intr_frame *f)
       }
     }
     return f->eax;
+}
+
+bool overlap_check (void *addr)
+{
+  struct list *mmap_list = &thread_current ()->mmap_list;
+  struct list_elem *e;
+  for (e = list_begin (mmap_list); e != list_end (mmap_list) ; e = list_next(e))
+  {
+    struct spage_entry *se = list_entry (e, struct spage_entry, mm_elem);
+    if (se->upage == addr)
+      return false;
+  }
+  return true;
 }
 
 
