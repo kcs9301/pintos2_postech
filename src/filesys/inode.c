@@ -79,6 +79,113 @@ byte_to_sector (const struct inode *inode, off_t pos)
     return -1;
 }
 
+static bool
+check_and_extend (struct inode *inode, off_t pos, off_t size)
+{
+  bool success = true;
+  if (pos + size >= inode->data.length)
+  {
+    struct inode_double *indirect = &inode->indirect;
+    if (indirect != NULL)
+    {
+      size_t sectors = bytes_to_sectors (pos+size);
+      size_t sectors_double_indirect = bytes_to_sectors_indirect (pos+size);
+
+      size_t i;
+      size_t j;
+      for (i=0;i<128;i++){
+        if (indirect->sectors[i] == -1)
+          break;
+      }
+      if (i < sectors_double_indirect)
+      {
+        static char zeros[BLOCK_SECTOR_SIZE];
+        block_sector_t buffer[128];
+        block_read (fs_device, indirect->sectors[i-1], buffer);
+        for (j=0;j<128;j++)
+        {
+          if (buffer[j]==-1)
+          {
+            if (free_map_allocate (1, &buffer[j]))
+              block_write (fs_device, buffer[j], zeros);
+            else
+              success = false;
+          }
+        }
+        block_write (fs_device, indirect->sectors[i-1], buffer);
+
+        for (i;i<sectors_double_indirect;i++)
+        {
+          if (free_map_allocate (1, &indirect->sectors[i]))
+          {
+            size_t k;
+
+            if (sectors > 128 * (i+1))
+            {
+            
+              if (free_map_allocate (128, &buffer[0]))
+              {
+                for (k=0;k<128;k++){
+                  block_write (fs_device, buffer[0]+k, zeros);
+                  buffer[k] = buffer[0]+k;
+                }
+                block_write (fs_device, indirect->sectors[i], buffer);
+              }
+              else
+                success = false;            
+            }
+            else
+            {
+              int n = sectors - (128*i);
+            
+              if (free_map_allocate (n, &buffer[0]))
+              {
+                for (k=0;k<128;k++){
+                  if (k<n){
+                    block_write (fs_device, buffer[0]+k, zeros);
+                    buffer[k] = buffer[0]+k;
+                  }
+                  else
+                    buffer[k] = -1;
+                }
+                block_write (fs_device, indirect->sectors[i], buffer);
+              }
+              else
+                success = false;  
+            }
+          }
+        }
+
+        block_write (fs_device, inode->data.start, indirect);
+
+      }
+      else
+      {
+        static char zeros[BLOCK_SECTOR_SIZE];
+        block_sector_t buffer[128];
+        block_read (fs_device, indirect->sectors[i-1], buffer);
+        
+        sectors = sectors % BLOCK_SECTOR_SIZE;
+
+        for (j=0;j<sectors;j++)
+        {
+          if (buffer[j]==-1)
+          {
+            if (free_map_allocate (1, &buffer[j]))
+              block_write (fs_device, buffer[j], zeros);
+            else
+              success = false;
+          }
+        }
+
+      }
+
+      inode->data.length = pos + size;
+    }
+  }
+  return success;
+}
+
 /* List of open inodes, so that opening a single inode twice
    returns the same `struct inode'. */
 static struct list open_inodes;
@@ -122,6 +229,8 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->magic = INODE_MAGIC;
 
       size_t j;
+      for (j=0;j<128;j++)
+        indirect->sectors[j]=-1;
       for (j=0; j<sectors_double_indirect; j++)
       {
         if (free_map_allocate (1, &indirect->sectors[j]))
@@ -157,7 +266,7 @@ inode_create (block_sector_t sector, off_t length)
                   buffer[k] = buffer[0]+k;
                 }
                 else
-                  buffer[k] = NULL;
+                  buffer[k] = -1;
               }
               block_write (fs_device, indirect->sectors[j], buffer);
             }
@@ -380,6 +489,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if (inode->deny_write_cnt)
     return 0;
+
+  if (offset + size >= inode->data.length)
+    if (!check_and_extend (inode, offset, size))
+      PANIC ("Cannot extend");
 
   while (size > 0) 
     {
