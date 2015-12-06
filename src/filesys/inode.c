@@ -102,7 +102,7 @@ inode_create (block_sector_t sector, off_t length)
 {
   struct inode_disk *disk_inode = NULL;
   struct inode_double *indirect = NULL;
-  bool success = false;
+  bool success = true;
 
   ASSERT (length >= 0);
 
@@ -126,7 +126,7 @@ inode_create (block_sector_t sector, off_t length)
       {
         if (free_map_allocate (1, &indirect->sectors[j]))
         {
-          success = true;
+          
           block_sector_t buffer[128];
           static char zeros[BLOCK_SECTOR_SIZE];
           size_t k;
@@ -256,7 +256,7 @@ inode_close (struct inode *inode)
  
       /* Deallocate blocks if removed. */
       if (inode->removed) 
-        {
+        {/*
           block_sector_t buffer[128];
           size_t n1;
           size_t n2;
@@ -281,7 +281,7 @@ inode_close (struct inode *inode)
             }
 
           }// n1 for
-
+          */
           free_map_release (inode->sector, 1);
           free_map_release (inode->data.start, 1); 
         }
@@ -312,6 +312,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
+
+  if (inode == NULL)
+    return 0;
 
   while (size > 0) 
     {
@@ -371,6 +374,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;
+
+  if (inode == NULL)
+    return 0;
 
   if (inode->deny_write_cnt)
     return 0;
