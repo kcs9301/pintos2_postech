@@ -91,7 +91,7 @@ struct thread
 					   It is true. Otherwise, true */
     bool success_to_open;
     enum thread_status status;          /* Thread state. */
-    char name[16];                      /* Name (for debugging purposes). */
+    char name[100];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int orig_priority;
     int priority;                       /* Priority. */
@@ -123,7 +123,7 @@ struct thread
     struct semaphore wait_this;
     struct semaphore kill_this;
 
-    char process_name[16];
+    char process_name[100];
     struct file *fd_list[FD_MAX];
     int fd_num; 
     struct file *open_file;

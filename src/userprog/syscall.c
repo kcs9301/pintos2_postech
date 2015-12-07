@@ -1,5 +1,6 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
+#include <string.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
@@ -31,6 +32,11 @@ static void sys_seek (int fd, unsigned position, struct intr_frame *f);
 static unsigned sys_tell (int fd, struct intr_frame *f);
 static void sys_close (int fd, struct intr_frame *f);
 static int sys_mmap (int fd, void *addr, struct intr_frame *f);
+static bool sys_chdir (char *dir);
+static bool sys_mkdir (char *dir);
+static bool sys_readdir (int fd, char *name);
+static bool sys_isdir (int fd);
+static int sys_inumber (int fd);
 bool overlap_check (void *addr);
 
 void
@@ -126,6 +132,27 @@ syscall_handler (struct intr_frame *f)
     check_fd(*((int *)f->esp + 1), -1, f)
     sys_munmap (*((int *)f->esp + 1), f);
     break;
+  case SYS_CHDIR:
+    esp_under_phys_base (f, 1);
+    sys_chdir (*((int **)f->esp + 1));
+    break;
+  case SYS_MKDIR:
+    esp_under_phys_base (f, 1);
+    sys_mkdir (*((int **)f->esp+1));
+    break;
+  case SYS_READDIR:
+    esp_under_phys_base (f, 2);
+    sys_readdir (*((int *)f->esp + 1), *((int **)f->esp + 2));
+    break;
+  case SYS_ISDIR:
+    esp_under_phys_base (f, 1);
+    sys_isdir (*((int *)f->esp + 1));
+    break;
+  case SYS_INUMBER:
+    esp_under_phys_base (f, 1);
+    sys_inumber (*((int *)f->esp+1));
+    break;
+  
   }
 }
 
@@ -281,7 +308,7 @@ static int
 sys_open (void *file_, struct intr_frame *f)
 {
   struct file *file;
-  file = filesys_open ((char*)file_);
+  file = filesys_open ((char*)file_);////path deal
   if (file == NULL){
     f->eax = -1;
     return -1;
@@ -398,4 +425,30 @@ sys_read (int fd, void *buffer_, unsigned size, struct intr_frame *f)
       f->eax = file_read (t->fd_list[fd], buffer, size);
   }
   return f->eax;
+}
+
+static bool 
+sys_chdir (char *dir)
+{
+  return true;
+}
+static bool 
+sys_mkdir (char *dir)
+{
+  return true;
+}
+static bool 
+sys_readdir (int fd, char *name)
+{
+  return true;
+}
+static bool 
+sys_isdir (int fd)
+{
+  return true;
+}
+static int 
+sys_inumber (int fd)
+{
+  return 0;
 }

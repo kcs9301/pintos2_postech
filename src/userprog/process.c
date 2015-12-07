@@ -96,7 +96,7 @@ start_process (void *file_name_)
   success = load (file_name, &if_.eip, &if_.esp);
   t->success_to_load = success;
   sema_up(&t->wait_start_process);
-  strlcpy (thread_current()->process_name, file_name, 16);
+  strlcpy (thread_current()->process_name, file_name, 100);//////////////
 
   /* If load failed, quit. */
   if (!success){

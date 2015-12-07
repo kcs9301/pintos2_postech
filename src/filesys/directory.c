@@ -11,6 +11,7 @@ struct dir
   {
     struct inode *inode;                /* Backing store. */
     off_t pos;                          /* Current position. */
+    char *path;
   };
 
 /* A single directory entry. */
@@ -19,7 +20,10 @@ struct dir_entry
     block_sector_t inode_sector;        /* Sector number of header. */
     char name[NAME_MAX + 1];            /* Null terminated file name. */
     bool in_use;                        /* In use or free? */
+    bool is_dir;
   };
+
+static struct dir *cur_dir;
 
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
@@ -39,6 +43,10 @@ dir_open (struct inode *inode)
     {
       dir->inode = inode;
       dir->pos = 0;
+      dir->path = malloc (400);
+      char a = '/';
+      memcpy (dir->path, &a, sizeof &a);
+      cur_dir = dir;
       return dir;
     }
   else
@@ -48,6 +56,57 @@ dir_open (struct inode *inode)
       return NULL; 
     }
 }
+
+struct dir *
+dir_open_cur (char *dir_name)
+{
+  struct dir *dir = calloc (1, sizeof *dir);
+  struct inode *inode = NULL;
+  dir_lookup_dir (cur_dir, dir_name, &inode);
+  if (inode != NULL && dir != NULL)
+  {
+    dir->inode = inode;
+    dir->pos = 0;
+    dir->path = malloc (400);
+    char *buffer = malloc (400);
+    char a = '/';
+    memcpy (buffer, cur_dir->path, sizeof cur_dir->path);
+    memcpy (buffer + (sizeof cur_dir->path), dir_name, sizeof dir_name);
+    memcpy (buffer + (sizeof cur_dir->path) + (sizeof dir_name), &a, sizeof &a);
+    memcpy (dir->path, buffer, sizeof buffer);
+    free (buffer);
+    dir_close (cur_dir);
+    cur_dir = dir;
+    return dir;
+  }
+  else
+  {
+    inode_close (inode);
+    free (dir);
+    return NULL;
+  }
+}
+
+struct dir *
+dir_open_absolute (char *path)
+{
+  char *token, *save_ptr;
+  token = strtok_r (path, "/", &save_ptr);
+  dir_close (cur_dir);
+  struct dir *root = dir_open_root ();
+  struct dir *temp;
+
+  if (temp != NULL && root != NULL){
+    for (token = strtok_r (NULL, "/", &save_ptr); token != NULL;
+      token = strtok_r (NULL, "/", &save_ptr))
+    {
+      temp = dir_open_cur (token);
+    }
+  }
+  return temp;
+}
+
+
 
 /* Opens the root directory and returns a directory for it.
    Return true if successful, false on failure. */
@@ -132,6 +191,24 @@ dir_lookup (const struct dir *dir, const char *name,
   return *inode != NULL;
 }
 
+bool
+dir_lookup_dir (const struct dir *dir, const char *name,
+            struct inode **inode) 
+{
+  struct dir_entry e;
+
+  ASSERT (dir != NULL);
+  ASSERT (name != NULL);
+
+  if (lookup (dir, name, &e, NULL)
+        && e.is_dir)
+    *inode = inode_open (e.inode_sector);
+  else
+    *inode = NULL;
+
+  return *inode != NULL;
+}
+
 /* Adds a file named NAME to DIR, which must not already contain a
    file by that name.  The file's inode is in sector
    INODE_SECTOR.
@@ -172,6 +249,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
+  e.is_dir = false;
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
  done:
@@ -233,4 +311,10 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         } 
     }
   return false;
+}
+
+struct dir *
+get_cur_dir (void)
+{
+  return cur_dir;
 }

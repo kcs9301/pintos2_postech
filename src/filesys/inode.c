@@ -83,7 +83,7 @@ static bool
 check_and_extend (struct inode *inode, off_t pos, off_t size)
 {
   bool success = true;
-  if (pos + size >= inode->data.length)
+  if (pos  >= inode->data.length)
   {
     struct inode_double *indirect = &inode->indirect;
     if (indirect != NULL)
@@ -177,7 +177,7 @@ check_and_extend (struct inode *inode, off_t pos, off_t size)
               success = false;
           }
         }
-
+        block_write (fs_device, indirect->sectors[i-1], buffer);
       }
 
       inode->data.length = pos + size;

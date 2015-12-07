@@ -31,6 +31,8 @@ filesys_init (bool format)
     do_format ();
 
   free_map_open ();
+
+  dir_open_root ();
 }
 
 /* Shuts down the file system module, writing any unwritten data
@@ -49,14 +51,13 @@ bool
 filesys_create (const char *name, off_t initial_size) 
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
+  struct dir *dir = get_cur_dir();
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size)
                   && dir_add (dir, name, inode_sector));
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
-  dir_close (dir);
 
   return success;
 }
@@ -69,12 +70,11 @@ filesys_create (const char *name, off_t initial_size)
 struct file *
 filesys_open (const char *name)
 {
-  struct dir *dir = dir_open_root ();
+  struct dir *dir = get_cur_dir();
   struct inode *inode = NULL;
 
   if (dir != NULL)
     dir_lookup (dir, name, &inode);
-  dir_close (dir);
 
   return file_open (inode);
 }
@@ -86,9 +86,8 @@ filesys_open (const char *name)
 bool
 filesys_remove (const char *name) 
 {
-  struct dir *dir = dir_open_root ();
+  struct dir *dir = get_cur_dir();
   bool success = dir != NULL && dir_remove (dir, name);
-  dir_close (dir); 
 
   return success;
 }
