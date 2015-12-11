@@ -51,7 +51,7 @@ bool
 filesys_create (const char *name, off_t initial_size) 
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = get_cur_dir();
+  struct dir *dir = get_dir(name);
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size)
@@ -70,13 +70,20 @@ filesys_create (const char *name, off_t initial_size)
 struct file *
 filesys_open (const char *name)
 {
-  struct dir *dir = get_cur_dir();
+  struct dir *dir = get_dir(name);
   struct inode *inode = NULL;
 
-  if (dir != NULL)
-    dir_lookup (dir, name, &inode);
-
-  return file_open (inode);
+  if (dir != NULL){
+    if (dir_lookup (dir, name, &inode))
+    {
+      return file_open (inode);
+    }
+    else if (dir_lookup_dir (dir, name, &inode))
+    {
+      dir = dir_open_cur (get_relative_name (name));
+      return file_dir_open (dir_inode (dir));
+    }
+  }
 }
 
 /* Deletes the file named NAME.
@@ -86,7 +93,7 @@ filesys_open (const char *name)
 bool
 filesys_remove (const char *name) 
 {
-  struct dir *dir = get_cur_dir();
+  struct dir *dir = get_dir(name);
   bool success = dir != NULL && dir_remove (dir, name);
 
   return success;
@@ -103,3 +110,5 @@ do_format (void)
   free_map_close ();
   printf ("done.\n");
 }
+
+

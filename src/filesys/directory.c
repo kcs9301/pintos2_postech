@@ -24,6 +24,7 @@ struct dir_entry
   };
 
 static struct dir *cur_dir;
+bool is_no_dir (char **);
 
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
@@ -96,17 +97,32 @@ dir_open_absolute (char *path)
   struct dir *root = dir_open_root ();
   struct dir *temp;
 
-  if (temp != NULL && root != NULL){
+  if (root != NULL){
     for (token = strtok_r (NULL, "/", &save_ptr); token != NULL;
       token = strtok_r (NULL, "/", &save_ptr))
     {
+      if (is_no_dir (&save_ptr))
+        break;
       temp = dir_open_cur (token);
     }
   }
   return temp;
 }
 
-
+bool 
+is_no_dir (char **save_ptr)
+{
+  char *s;
+  s = *save_ptr;
+  while (true)
+  {
+    if (*s == '/')
+      return false;
+    if (*s == '\0')
+      return true;
+    s++;
+  }
+}
 
 /* Opens the root directory and returns a directory for it.
    Return true if successful, false on failure. */
@@ -183,7 +199,8 @@ dir_lookup (const struct dir *dir, const char *name,
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
-  if (lookup (dir, name, &e, NULL))
+  if (lookup (dir, name, &e, NULL)
+        && !e.is_dir)
     *inode = inode_open (e.inode_sector);
   else
     *inode = NULL;
@@ -317,4 +334,160 @@ struct dir *
 get_cur_dir (void)
 {
   return cur_dir;
+}
+
+struct dir *
+get_dir (char *path)
+{
+  char *token, *save_ptr;
+  struct dir *temp;
+  struct dir *root;
+  if(path[0]=='/')
+  {
+    dir_close (cur_dir);
+    root = dir_open_root ();
+    temp = root;
+    token = strtok_r (path, "/", &save_ptr);
+    if (root != NULL){
+      for (token = strtok_r (NULL, "/", &save_ptr); token != NULL;
+        token = strtok_r (NULL, "/", &save_ptr))
+      {
+        if (is_no_dir (&save_ptr))
+          break;
+        temp = dir_open_cur (token);
+      }
+    }
+  }
+  else
+  {
+    root = get_cur_dir ();
+    temp = root;
+    if (root != NULL){
+      for (token = strtok_r (path, "/", &save_ptr); token != NULL;
+        token = strtok_r (NULL, "/", &save_ptr))
+      {
+        if (is_no_dir (&save_ptr))
+          break;
+        temp = dir_open_cur (token);
+      }
+    }
+  }
+  return temp;
+}
+
+bool
+mkdir (char *name)
+{
+  block_sector_t inode_sector = 0;
+  struct dir *dir = get_dir(name);
+  name = get_relative_name (name);
+  bool success = (dir != NULL
+                  && free_map_allocate (1, &inode_sector)
+                  && inode_create (inode_sector, 16 * sizeof (struct dir_entry))
+                  && dir_add_dir (dir, name, inode_sector));
+  if (!success && inode_sector != 0)
+    free_map_release (inode_sector, 1);
+  return success;
+}
+
+char *
+get_relative_name (char *name)
+{
+  char *token, *save_ptr;
+  if (is_no_dir (&name))
+    return name;
+
+  for (token = strtok_r (name, "/", &save_ptr); token != NULL;
+        token = strtok_r (NULL, "/", &save_ptr))
+    {
+      if (is_no_dir (&save_ptr))
+        return save_ptr;
+    }
+}
+
+bool
+dir_add_dir (struct dir *dir, const char *name, block_sector_t inode_sector)
+{
+  struct dir_entry e;
+  off_t ofs;
+  bool success = false;
+
+  ASSERT (dir != NULL);
+  ASSERT (name != NULL);
+
+  /* Check NAME for validity. */
+  if (*name == '\0' || strlen (name) > NAME_MAX)
+    return false;
+
+  /* Check that NAME is not in use. */
+  if (lookup (dir, name, NULL, NULL))
+    goto done;
+
+  /* Set OFS to offset of free slot.
+     If there are no free slots, then it will be set to the
+     current end-of-file.
+     
+     inode_read_at() will only return a short read at end of file.
+     Otherwise, we'd need to verify that we didn't get a short
+     read due to something intermittent such as low memory. */
+  for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+       ofs += sizeof e) 
+    if (!e.in_use)
+      break;
+
+  /* Write slot. */
+  e.in_use = true;
+  strlcpy (e.name, name, sizeof e.name);
+  e.inode_sector = inode_sector;
+  e.is_dir = true;
+  success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+
+ done:
+  return success;
+}
+
+struct inode *
+dir_inode (struct dir *dir)
+{
+  return dir->inode;
+}
+
+bool
+chdir (char *path)
+{
+  char *token, *save_ptr;
+  struct dir *temp;
+  struct dir *root;
+  
+  if(path[0]=='/')
+  {
+    dir_close (cur_dir);
+    root = dir_open_root ();
+    temp = root;
+    token = strtok_r (path, "/", &save_ptr);
+    if (root != NULL){
+      for (token = strtok_r (NULL, "/", &save_ptr); token != NULL;
+        token = strtok_r (NULL, "/", &save_ptr))
+      {
+        temp = dir_open_cur (token);
+      }
+    }
+  }
+  else
+  {
+    root = get_cur_dir ();
+    temp = root;
+    if (root != NULL){
+      for (token = strtok_r (path, "/", &save_ptr); token != NULL;
+        token = strtok_r (NULL, "/", &save_ptr))
+      {
+        temp = dir_open_cur (token);
+      }
+    }
+  }
+
+  if (temp == NULL)
+    return false;
+  else
+    return true;
 }

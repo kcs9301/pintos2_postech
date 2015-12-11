@@ -10,6 +10,7 @@
 #include <kernel/console.h>
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/directory.h"
 #include "devices/input.h"
 #include "devices/shutdown.h"
 
@@ -32,11 +33,11 @@ static void sys_seek (int fd, unsigned position, struct intr_frame *f);
 static unsigned sys_tell (int fd, struct intr_frame *f);
 static void sys_close (int fd, struct intr_frame *f);
 static int sys_mmap (int fd, void *addr, struct intr_frame *f);
-static bool sys_chdir (char *dir);
-static bool sys_mkdir (char *dir);
-static bool sys_readdir (int fd, char *name);
-static bool sys_isdir (int fd);
-static int sys_inumber (int fd);
+static bool sys_chdir (char *dir, struct intr_frame *f);
+static bool sys_mkdir (char *dir, struct intr_frame *f);
+static bool sys_readdir (int fd, char *name, struct intr_frame *f);
+static bool sys_isdir (int fd, struct intr_frame *f);
+static int sys_inumber (int fd, struct intr_frame *f);
 bool overlap_check (void *addr);
 
 void
@@ -134,23 +135,23 @@ syscall_handler (struct intr_frame *f)
     break;
   case SYS_CHDIR:
     esp_under_phys_base (f, 1);
-    sys_chdir (*((int **)f->esp + 1));
+    sys_chdir (*((int **)f->esp + 1), f);
     break;
   case SYS_MKDIR:
     esp_under_phys_base (f, 1);
-    sys_mkdir (*((int **)f->esp+1));
+    sys_mkdir (*((int **)f->esp+1), f);
     break;
   case SYS_READDIR:
     esp_under_phys_base (f, 2);
-    sys_readdir (*((int *)f->esp + 1), *((int **)f->esp + 2));
+    sys_readdir (*((int *)f->esp + 1), *((int **)f->esp + 2), f);
     break;
   case SYS_ISDIR:
     esp_under_phys_base (f, 1);
-    sys_isdir (*((int *)f->esp + 1));
+    sys_isdir (*((int *)f->esp + 1), f);
     break;
   case SYS_INUMBER:
     esp_under_phys_base (f, 1);
-    sys_inumber (*((int *)f->esp+1));
+    sys_inumber (*((int *)f->esp+1), f);
     break;
   
   }
@@ -428,27 +429,68 @@ sys_read (int fd, void *buffer_, unsigned size, struct intr_frame *f)
 }
 
 static bool 
-sys_chdir (char *dir)
+sys_chdir (char *dir, struct intr_frame *f)
 {
-  return true;
+  if (chdir (dir))
+    return f->eax = true;
+  else
+    return f->eax = false;
 }
 static bool 
-sys_mkdir (char *dir)
+sys_mkdir (char *dir, struct intr_frame *f)
 {
-  return true;
+  if (mkdir (dir)){
+    f->eax = true;
+    return true;
+  }
+  else{
+    f->eax = false;
+    return false;
+  }
 }
 static bool 
-sys_readdir (int fd, char *name)
+sys_readdir (int fd, char *name, struct intr_frame *f)
 {
-  return true;
+  ASSERT (fd >= 0 && fd < FD_MAX);
+  struct thread *t = thread_current();
+  if (t->fd_list[fd] == NULL)
+      f->eax = false;
+  else
+  {
+    if (!file_is_dir (t->fd_list[fd])){
+      f->eax = false;
+      return false;
+    }
+    else
+      return f->eax = true;
+  }
 }
+
 static bool 
-sys_isdir (int fd)
+sys_isdir (int fd, struct intr_frame *f)
 {
-  return true;
+  ASSERT (fd >= 0 && fd < FD_MAX);
+  struct thread *t = thread_current();
+  if (t->fd_list[fd] == NULL)
+      f->eax = false;
+  else
+  {
+    if (!file_is_dir (t->fd_list[fd])){
+      f->eax = false;
+      return false;
+    }
+    else{
+      f->eax = true;
+      return true;
+    }
+  }
 }
 static int 
-sys_inumber (int fd)
+sys_inumber (int fd, struct intr_frame *f)
 {
-  return 0;
+  ASSERT (fd >= 0 && fd < FD_MAX);
+  struct thread *t = thread_current();
+  
+  f->eax = file_inode_sector (t->fd_list[fd]);
+  return f->eax;
 }

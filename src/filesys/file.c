@@ -15,6 +15,19 @@ struct file
 /* Opens a file for the given INODE, of which it takes ownership,
    and returns the new file.  Returns a null pointer if an
    allocation fails or if INODE is null. */
+
+bool
+file_is_dir (struct file *file)
+{
+  return file->is_dir;
+}
+
+int
+file_inode_sector (struct file *file)
+{
+  return get_sector (file->inode);
+}
+
 struct file *
 file_open (struct inode *inode) 
 {
@@ -25,6 +38,26 @@ file_open (struct inode *inode)
       file->pos = 0;
       file->deny_write = false;
       file->is_dir = false;
+      return file;
+    }
+  else
+    {
+      inode_close (inode);
+      free (file);
+      return NULL; 
+    }
+}
+
+struct file *
+file_dir_open (struct inode *inode) 
+{
+  struct file *file = calloc (1, sizeof *file);
+  if (inode != NULL && file != NULL)
+    {
+      file->inode = inode;
+      file->pos = 0;
+      file->deny_write = false;
+      file->is_dir = true;
       return file;
     }
   else
@@ -99,6 +132,8 @@ file_write (struct file *file, const void *buffer, off_t size)
 {
   if (file->deny_write)
     return 0;
+  if (file->is_dir)
+    return -1;
 
   off_t bytes_written = inode_write_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_written;
